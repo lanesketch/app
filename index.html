@@ -12178,7 +12178,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
 (function(){
  const btn=document.getElementById('btn-measure'),tog=document.getElementById('tog-dims');if(!btn||!tog)return;
  const grp=L.layerGroup().addTo(map),dimsGrp=L.layerGroup().addTo(map);
- let on=false,pts=[],done=false,rub=null,mouse=null;
+ let on=false,pts=[],done=false,rub=null,mouse=null;window.__measureOn=()=>on;
  const lab=(ll,txt,strong)=>L.marker(ll,{interactive:false,keyboard:false,zIndexOffset:4000,icon:L.divIcon({className:'',iconSize:[0,0],html:'<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;background:#111827;color:'+(strong?'#fde68a':'#f3f4f6')+';border:1px solid '+(strong?'#f59e0b':'#4b5563')+';border-radius:4px;padding:1px 5px;font:600 11px system-ui,sans-serif;pointer-events:none">'+txt+'</div>'})});
  const fmt=m=>formatLength(m);
  function draw(){
@@ -12573,14 +12573,29 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         ['mousedown', 'wheel', 'contextmenu'].forEach(ev => p.addEventListener(ev, e => e.stopPropagation()));
     }
     window.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('map-keys-more')) closeMore(); });
+    let ixT = 0, ixV = false;
+    const hasIx = () => { const t = Date.now(); if (t - ixT > 1000) { ixT = t; try { ixV = !!(window.ixSerialize && window.ixSerialize().length); } catch (e) { ixV = false; } } return ixV; };
     function items() {
-        const ix = document.body.classList.contains('ix-on'); if (ix) return null;
+        const B = document.body;
+        if (B.classList.contains('ix-on')) return null;      // the Intersection Builder has its own strip
+        const RC = [null, 'RC', 'Menu'], ortho = window.DM && window.DM.mode === 'ortho' ? [[null, 'Ctrl', 'Free point']] : [];
+        const fm = document.getElementById('feat-modal');
+        if (fm && fm.style.display === 'flex') return [[null, 'Enter', 'Save'], [null, 'Esc', 'Cancel']];
+        if (B.classList.contains('cropping')) return [[null, 'Esc', 'Cancel crop']];
         if (window.lpIsPlacing && window.lpIsPlacing()) return [['Escape', 'Esc', 'Cancel'], [null, 'click', 'Place here']];
-        if (typeof railToolOn !== 'undefined' && railToolOn) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']];
-        if (typeof isDrawing !== 'undefined' && isDrawing) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']];
+        if (window.__measureOn && window.__measureOn()) return [['Escape', 'Esc', 'Close measure'], [null, 'click', 'Add point'], [null, 'dbl', 'Finish'], [null, 'RC', 'Finish / close']];
+        if (typeof railToolOn !== 'undefined' && railToolOn) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']].concat(ortho);
+        if (typeof isDrawing !== 'undefined' && isDrawing) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']].concat(ortho);
         const ls = allLanes.some(l => l.isSelected), rs = allRails.some(r => r.isSelected);
-        if (ls || rs) { const o = [['Escape', 'Esc', 'Deselect'], ['Delete', 'Del', 'Delete']]; if (ls || hov) o.push(['r', 'R', 'Flip lane']); o.push(['c', CTRL + '+C', 'Copy', 1], ['v', CTRL + '+V', 'Paste', 1], ['z', CTRL + '+Z', 'Undo', 1]); return o; }
-        return (hov ? [['r', 'R', 'Flip lane']] : []).concat([['z', CTRL + '+Z', 'Undo', 1], ['s', CTRL + '+S', 'Save', 1]]);
+        const ns = !!(window.__hasSelNodes && window.__hasSelNodes()), xs = !!(window.ixHasSel && window.ixHasSel()), any = ls || rs || ns || xs;
+        if (typeof selTool !== 'undefined' && selTool !== 'pointer') {      // Box / Lasso select
+            const o = [['Escape', 'Esc', 'Turn off select'], [null, 'click', 'Drag to select'], [null, 'Shift', 'Add to selection']];
+            if (any) o.push(['Delete', 'Del', 'Delete'], RC); return o;
+        }
+        if (any) { const o = [['Escape', 'Esc', 'Deselect'], ['Delete', 'Del', 'Delete']]; if (ls || hov) o.push(['r', 'R', 'Flip lane']); o.push(['c', CTRL + '+C', 'Copy', 1], ['v', CTRL + '+V', 'Paste', 1], ['z', CTRL + '+Z', 'Undo', 1], RC); return o; }
+        const work = allLanes.some(l => l.isCompleted) || allRails.length > 0 || hasIx();
+        if (!work) return [['o', CTRL + '+O', 'Open', 1], RC];      // nothing drawn or opened yet: open a sketch; there is nothing to save
+        return (hov ? [['r', 'R', 'Flip lane']] : []).concat([['z', CTRL + '+Z', 'Undo', 1], ['s', CTRL + '+S', 'Save', 1], RC]);
     }
     function sync() {
         try {
@@ -12590,7 +12605,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
             const chip = (k, l, t, c) => {
                 const key = k === 'RC' ? MOUSE : (l === 'click' || l === 'dbl') ? MOUSE_L : '<kbd style="font:600 11px system-ui,sans-serif;border:1px solid #9ca3af;border-radius:3px;padding:0 4px;background:rgba(255,255,255,.12)">' + l + '</kbd>';
                 const base = 'display:flex;align-items:center;gap:5px;background:rgba(17,24,39,.8);color:#f3f4f6;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:3px 8px;font:12px system-ui,sans-serif;pointer-events:auto;';
-                if (k === null) return '<div style="' + base + '">' + (l === 'Alt' ? key : MOUSE_L + (l === 'dbl' ? '<span style="opacity:.7">x2</span>' : '')) + t + '</div>';
+                if (k === null) return '<div style="' + base + '">' + (l === 'RC' ? MOUSE : (l === 'click' || l === 'dbl') ? MOUSE_L + (l === 'dbl' ? '<span style="opacity:.7">x2</span>' : '') : key) + t + '</div>';
                 return '<button type="button" data-k="' + k + '"' + (c ? ' data-c="1"' : '') + ' title="' + (k === 'RC' ? 'Right click' : l) + '" style="' + base + 'cursor:pointer">' + key + t + '</button>';
             };
             el.innerHTML = it.map(x => chip(x[0], x[1], x[2], x[3])).join(''); el.style.display = 'flex';
@@ -12598,7 +12613,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     }
     const u4 = updateLaneGraphics; updateLaneGraphics = function () { const res = u4.apply(this, arguments); setTimeout(sync, 0); return res; };
     ['keyup', 'mouseup', 'click'].forEach(ev => window.addEventListener(ev, () => setTimeout(sync, 30)));
-    setTimeout(sync, 400);
+    setTimeout(sync, 400); setInterval(sync, 700);      // a safety net for states that change without a click or key (dialogs, tools closing)
 })();
 </script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bc47701a6c2d48beb7aec1542ee7f5d4"}'></script><!-- End Cloudflare Web Analytics -->
