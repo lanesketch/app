@@ -11524,6 +11524,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         return L.latLng(inner.reduce((s, p) => s + p.lat, 0) / inner.length, inner.reduce((s, p) => s + p.lng, 0) / inner.length);
     }
     function tag(ll, text, color) {
+        try { if (window.__trT) text = window.__trT(text); } catch (e) { /* untranslated */ }
         return L.marker(ll, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0],
             html: '<div style="transform:translate(-50%,-135%);white-space:nowrap;background:' + color + ';color:#fff;font:600 11px system-ui,sans-serif;padding:2px 7px;border-radius:9px;box-shadow:0 1px 4px rgba(0,0,0,.5)">' + text + '</div>' }) });
     }
@@ -12015,7 +12016,9 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         htmls.forEach(h => { tmp.innerHTML = h; const w = document.createTreeWalker(tmp, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { if (n.parentElement && n.parentElement.closest('.notranslate')) continue; const s = n.nodeValue.trim().replace(/\s+/g, ' '); if (s && hasLetters(s)) set.add(s); } });
         translateTexts([...set], tl).catch(() => {});
     };
-    function prefetchTut() { try { if (window.__tutStrings) window.__trPrefetch(window.__tutStrings()); } catch (e) { /* ignore */ } }
+    // map labels live inside Leaflet panes (skipped by the page walker), so they ask for their text directly
+    window.__trT = t => { if (active === 'en') return t; const c = cache.get(active + '|' + t); if (c !== undefined) return c; translateTexts([t], active).catch(() => {}); return t; };
+    function prefetchTut() { try { if (window.__tutStrings) window.__trPrefetch(window.__tutStrings().concat(['<b>Road 1 (west)</b><b>Road 2 (east)</b><b>Road 3 (south)</b><b>Leave this gap empty</b><b>Drag a box around this area</b>'])); } catch (e) { /* ignore */ } }
     async function run() {
         if (busy || active === 'en') return;
         busy = true; const myGen = gen, tl = active;
