@@ -13492,7 +13492,10 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   const C = window.COMMUNITY = Object.assign({ worker: 'https://api.lanesketch.net', repo: 'lanesketch/community', branch: 'main' }, window.COMMUNITY || {});
   const $ = id => document.getElementById(id), KEY = 'lanesketch.gh';
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const toast = m => { try { showToast(m); } catch (e) { alert(m); } };
+  const toast = m => {      // our own toast, so it shows above the viewer and the dialogs too
+    let t = $('cm-toast'); if (!t) { t = document.createElement('div'); t.id = 'cm-toast'; t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9000;background:rgba(17,24,39,.95);color:#fff;border:1px solid #6b7280;border-radius:8px;padding:9px 16px;font:14px system-ui,sans-serif;max-width:90vw;display:none;box-shadow:0 4px 18px rgba(0,0,0,.5)'; document.body.appendChild(t); }
+    t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => { t.style.display = 'none'; }, 4500);
+  };
   const ready = () => { if (C.worker && C.repo) return true; toast('The community is not set up yet (the site owner needs to add the Worker URL and repo).'); return false; };
   const raw = p => 'https://raw.githubusercontent.com/' + C.repo + '/' + C.branch + '/' + p;
   let sess = null, cur = null;      // cur = the community sketch currently open in the editor
@@ -13520,7 +13523,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   async function api(path, body) {
     const r = await fetch(C.worker.replace(/\/$/, '') + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (sess && sess.session) }, body: JSON.stringify(body) });
     let j = {}; try { j = await r.json(); } catch (e) { }
-    if (r.status === 401) { sess = null; try { localStorage.removeItem(KEY); } catch (e) { } paint(); }
+    if (r.status === 401) { sess = null; try { localStorage.removeItem(KEY); } catch (e) { } paint(); throw new Error('Your sign-in has expired. Use Sign in with GitHub again, then retry.'); }
     if (!r.ok) throw new Error(j.error || ('Error ' + r.status));
     return j;
   }
@@ -13640,47 +13643,80 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         .bindTooltip(esc(it.title) + ' &middot; @' + esc(it.author), { sticky: true }).on('click', e => { L.DomEvent.stopPropagation(e); onHit(e.latlng); }).addTo(rectLayer);
     });
   }
-  function fillet(pts) {      // rounds bends that carry a radius
-    if (pts.length < 3) return pts.map(p => [p.lat, p.lng]);
-    const k = Math.PI / 180, kx = 111320 * Math.cos(pts[0].lat * k), ky = 110540, o = pts[0];
-    const P = pts.map(p => ({ x: (p.lng - o.lng) * kx, y: (p.lat - o.lat) * ky, R: p.R || 0 })), out = [P[0]];
-    for (let i = 1; i < P.length - 1; i++) {
-      const a = P[i - 1], b = P[i], c = P[i + 1];
-      if (!(b.R > 0)) { out.push(b); continue; }
-      let v1 = { x: a.x - b.x, y: a.y - b.y }, v2 = { x: c.x - b.x, y: c.y - b.y };
-      const l1 = Math.hypot(v1.x, v1.y), l2 = Math.hypot(v2.x, v2.y); if (l1 < 1e-6 || l2 < 1e-6) { out.push(b); continue; }
-      v1 = { x: v1.x / l1, y: v1.y / l1 }; v2 = { x: v2.x / l2, y: v2.y / l2 };
-      const ang = Math.acos(Math.max(-1, Math.min(1, v1.x * v2.x + v1.y * v2.y)));
-      if (ang > 3.1 || ang < 0.05) { out.push(b); continue; }
-      let R = b.R, t = R / Math.tan(ang / 2); const mx = Math.min(l1, l2) * 0.9999; if (t > mx) { t = mx; R = t * Math.tan(ang / 2); }
-      const bis = { x: v1.x + v2.x, y: v1.y + v2.y }, bl = Math.hypot(bis.x, bis.y), d = R / Math.sin(ang / 2);
-      const C = { x: b.x + bis.x / bl * d, y: b.y + bis.y / bl * d };
-      const p1 = { x: b.x + v1.x * t, y: b.y + v1.y * t }, p2 = { x: b.x + v2.x * t, y: b.y + v2.y * t };
-      const a1 = Math.atan2(p1.y - C.y, p1.x - C.x), a2 = Math.atan2(p2.y - C.y, p2.x - C.x); let dl = a2 - a1; while (dl > Math.PI) dl -= 2 * Math.PI; while (dl < -Math.PI) dl += 2 * Math.PI;
-      const st = Math.max(2, Math.ceil(Math.abs(dl) / 0.1)); for (let s = 0; s <= st; s++) { const an = a1 + dl * s / st; out.push({ x: C.x + R * Math.cos(an), y: C.y + R * Math.sin(an) }); }
-    }
-    out.push(P[P.length - 1]);
-    return out.map(p => p.lat !== undefined ? [p.lat, p.lng] : [o.lat + p.y / ky, o.lng + p.x / kx]);
-  }
   const mpp = (lat, z) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
   function loadGeo(it) {
     if (!geoP[it.id]) geoP[it.id] = fetch(raw('sketches/' + it.id + '.json') + '?v=' + encodeURIComponent(it.updated || it.created || '')).then(r => { if (!r.ok) throw new Error('x'); return r.json(); }).catch(e => { delete geoP[it.id]; return null; });
     return geoP[it.id];
   }
+  // ---- a light version of the editor's own drawing: same bend smoothing, per-lane bands, lane lines ----
+  function smoothXY(pts, T) {      // follows the editor's smoothInto: circular arcs where a bend has a radius, otherwise a default-radius curve
+    const k = Math.PI / 180, o = pts[0], kx = 111320 * Math.cos(o.lat * k), ky = 110540;
+    const xy = pts.map(p => [(p.lng - o.lng) * kx, (p.lat - o.lat) * ky]), rad = pts.map(p => p.R || 0), n = xy.length, ll = q => [o.lat + q[1] / ky, o.lng + q[0] / kx];
+    if (n < 3) return { xy, ll };
+    const Rd = Math.max(45, T * 8), out = [xy[0]], bend = new Array(n).fill(false), H = Math.hypot;
+    for (let i = 1; i < n - 1; i++) {
+      const a = xy[i - 1], v = xy[i], b = xy[i + 1], l1 = H(v[0] - a[0], v[1] - a[1]), l2 = H(b[0] - v[0], b[1] - v[1]); if (l1 < 1e-6 || l2 < 1e-6) continue;
+      bend[i] = Math.acos(Math.max(-1, Math.min(1, ((v[0] - a[0]) * (b[0] - v[0]) + (v[1] - a[1]) * (b[1] - v[1])) / (l1 * l2)))) >= 0.035;
+    }
+    const run = (i0, i1) => { let t = 0; for (let q = i0; q < i1; q++) t += H(xy[q + 1][0] - xy[q][0], xy[q + 1][1] - xy[q][1]); return t; };
+    let skip = null;
+    for (let i = 1; i < n - 1; i++) {
+      if (!bend[i]) { if (skip && H(xy[i][0] - skip.v[0], xy[i][1] - skip.v[1]) < skip.d - 1e-6) continue; out.push(xy[i]); continue; }
+      const a = xy[i - 1], v = xy[i], b = xy[i + 1];
+      let pj = i - 1; while (pj > 0 && !bend[pj]) pj--; let nj = i + 1; while (nj < n - 1 && !bend[nj]) nj++;
+      const l1 = run(pj, i), l2 = run(i, nj), la = H(v[0] - a[0], v[1] - a[1]), lb = H(b[0] - v[0], b[1] - v[1]);
+      const u1 = [(v[0] - a[0]) / la, (v[1] - a[1]) / la], u2 = [(b[0] - v[0]) / lb, (b[1] - v[1]) / lb];
+      const th = Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1]))), Ri = rad[i] > 0 ? rad[i] : 0;
+      const rem = Math.max(0, l1 - (pj > 0 && skip ? skip.d : 0)) * 0.9999, c1 = Ri ? rem : Math.min((pj === 0 ? 0.85 : 0.5) * l1, rem), c2 = (nj === n - 1 ? (Ri ? 0.9999 : 0.85) : (Ri ? (rad[nj] > 0 ? 0.9999 : 0.75) : 0.5)) * l2;
+      const d = Math.min((Ri || Rd) * Math.tan(th / 2), c1, c2), N = Math.max(6, Math.ceil(th / (Ri ? 0.08 : 0.1)));
+      while (out.length > 1) { const q = out[out.length - 1]; if (H(q[0] - v[0], q[1] - v[1]) < d - 1e-6) out.pop(); else break; }
+      const p0 = [v[0] - u1[0] * d, v[1] - u1[1] * d], p2 = [v[0] + u2[0] * d, v[1] + u2[1] * d];
+      if (Ri) {
+        const sg = (u1[0] * u2[1] - u1[1] * u2[0]) > 0 ? 1 : -1, Ra = d / Math.tan(th / 2), Cc = [p0[0] - sg * u1[1] * Ra, p0[1] + sg * u1[0] * Ra], a0 = Math.atan2(p0[1] - Cc[1], p0[0] - Cc[0]);
+        for (let q = 0; q <= N; q++) { const aa = a0 + sg * th * q / N; out.push(q === 0 ? p0 : (q === N ? p2 : [Cc[0] + Ra * Math.cos(aa), Cc[1] + Ra * Math.sin(aa)])); }
+      } else for (let q = 0; q <= N; q++) { const t = q / N, w0 = (1 - t) * (1 - t), w1 = 2 * t * (1 - t), w2 = t * t; out.push([w0 * p0[0] + w1 * v[0] + w2 * p2[0], w0 * p0[1] + w1 * v[1] + w2 * p2[1]]); }
+      skip = { v, d };
+    }
+    out.push(xy[n - 1]);
+    const ded = [out[0]]; for (let q = 1; q < out.length; q++) { const pv = ded[ded.length - 1], cv = out[q]; if (H(cv[0] - pv[0], cv[1] - pv[1]) > 0.03 || q === out.length - 1) ded.push(cv); }
+    return { xy: ded, ll };
+  }
+  function offXY(xy, d) {      // a copy of the line moved d metres to the left of its direction of travel
+    if (!d) return xy;
+    const n = xy.length, nm = [];
+    for (let i = 0; i < n - 1; i++) { const dx = xy[i + 1][0] - xy[i][0], dy = xy[i + 1][1] - xy[i][1], l = Math.hypot(dx, dy) || 1; nm.push([-dy / l, dx / l]); }
+    return xy.map((p, i) => {
+      const a = nm[Math.max(0, i - 1)], b = nm[Math.min(n - 2, i)]; let mx = a[0] + b[0], my = a[1] + b[1]; const ml = Math.hypot(mx, my) || 1; mx /= ml; my /= ml;
+      const cs = Math.max(0.5, mx * b[0] + my * b[1]); return [p[0] + mx * d / cs, p[1] + my * d / cs];
+    });
+  }
+  const laneCol = t => /bike|cycl/i.test(t || '') ? '#2f7d4f' : /bus|transit|tram/i.test(t || '') ? '#8b2d2d' : /med|island|buf/i.test(t || '') ? '#6b7a5f' : '#3b4048';
   function build(it, data) {
-    const g = L.layerGroup(), parts = [];
-    (data.lanes || []).forEach(l => {
-      if (!l || !l.points || l.points.length < 2 || l.ixrec || l.cvx) return;
-      const ll = fillet(l.points), rail = !!l.rail, wm = rail ? Math.max(1.4, +l.w || 1.5) : (l.widthMeters || 3.2) * Math.max(1, l.totalLaneCount || 1);
-      const base = L.polyline(ll, { color: rail ? '#a8a29e' : '#374151', weight: 3, opacity: 0.9, lineCap: 'butt', lineJoin: 'round', interactive: false }).addTo(g);
-      parts.push({ pl: base, wm });
-      if (!rail) { const mid = L.polyline(ll, { color: '#fde047', weight: 1, opacity: 0.9, dashArray: '8 6', interactive: false }).addTo(g); parts.push({ pl: mid, wm: 0 }); }
+    const g = L.layerGroup(), parts = [], add = (ll, o, wm) => { parts.push({ pl: L.polyline(ll, Object.assign({ interactive: false, lineCap: 'butt', lineJoin: 'round' }, o)).addTo(g), wm: wm || 0 }); };
+    const ls = (data.lanes || []).filter(l => l && l.points && l.points.length >= 2 && !l.ixrec && !l.cvx).sort((a, b) => (a.lvl || 0) - (b.lvl || 0));
+    ls.forEach(l => {
+      if (l.rail) {
+        const sm = smoothXY(l.points, 3), ll = sm.xy.map(sm.ll), w = Math.max(1.4, +l.w || 1.5);
+        add(ll, { color: '#78716c', weight: 3, opacity: 0.95 }, w); add(ll, { color: '#d6d3d1', weight: 1, opacity: 0.9, dashArray: '2 5' }, 0); return;
+      }
+      const n = Math.max(1, l.totalLaneCount || 1), w0 = l.widthMeters || 3.2, ws = []; for (let k = 0; k < n; k++) ws.push((l.laneWidths && l.laneWidths[k]) || w0);
+      const T = ws.reduce((a, b) => a + b, 0), pp = [0]; ws.forEach((x, k) => pp.push(pp[k] + x));
+      const sm = smoothXY(l.points, T), toL = xy => xy.map(sm.ll);
+      add(toL(offXY(sm.xy, 0)), { color: '#30343a', weight: 3, opacity: 0.97 }, T + 0.3);      // the road surface
+      for (let k = 0; k < n; k++) { const t = l.types && l.types[k]; if (laneCol(t) !== '#3b4048') add(toL(offXY(sm.xy, T / 2 - (pp[k] + ws[k] / 2))), { color: laneCol(t), weight: 3, opacity: 0.97 }, ws[k]); }
+      const dirOf = k => l.dirs ? l.dirs[k] : (k < (l.bwdCount || 0) ? -1 : 1);
+      for (let i = 1; i < n; i++) {
+        const d = T / 2 - pp[i];
+        if (dirOf(i - 1) !== dirOf(i)) { add(toL(offXY(sm.xy, d + 0.14)), { color: '#facc15', weight: 1, opacity: 0.95 }, 0.12); add(toL(offXY(sm.xy, d - 0.14)), { color: '#facc15', weight: 1, opacity: 0.95 }, 0.12); }
+        else add(toL(offXY(sm.xy, d)), { color: '#f3f4f6', weight: 1, opacity: 0.9, dashArray: '9 9' }, 0);
+      }
+      add(toL(offXY(sm.xy, T / 2 - 0.2)), { color: '#f3f4f6', weight: 1, opacity: 0.85 }, 0.12); add(toL(offXY(sm.xy, -T / 2 + 0.2)), { color: '#f3f4f6', weight: 1, opacity: 0.85 }, 0.12);
     });
     if (!it.bb) { let a = 90, b = 180, c = -90, d = -180; (data.lanes || []).forEach(l => (l.points || []).forEach(p => { a = Math.min(a, p.lat); c = Math.max(c, p.lat); b = Math.min(b, p.lng); d = Math.max(d, p.lng); })); if (c >= a) { it.bb = [a, b, c, d]; rects(); } }
     return { g, parts, lat: it.lat };
   }
   function restyle(d, z) {
-    const m = mpp(d.lat, z); d.parts.forEach(p => { if (p.wm) p.pl.setStyle({ weight: Math.max(2, p.wm / m) }); });
+    const m = mpp(d.lat, z); d.parts.forEach(p => { if (p.wm) p.pl.setStyle({ weight: Math.max(p.wm < 0.5 ? 1 : 2, p.wm / m) }); });
   }
   function restyleAll() { const z = vmap.getZoom(); Object.keys(drawn).forEach(k => restyle(drawn[k], z)); view(); }
   function geoUpdate() {
@@ -13705,10 +13741,11 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     if (fly) vmap.fitBounds(bbLL(it), { maxZoom: 19, padding: [50, 50] });
     const mine = sess && (sess.login.toLowerCase() === it.author.toLowerCase());
     const el = document.createElement('div'); el.style.cssText = 'min-width:200px;color:#111';
-    el.innerHTML = '<div style="display:flex;gap:8px;align-items:center"><img src="https://github.com/' + encodeURIComponent(it.author) + '.png?size=64" width="36" height="36" style="border-radius:50%" alt=""><div><b>' + esc(it.title) + '</b><br><a href="#" data-a="prof" style="color:#1d4ed8">@' + esc(it.author) + '</a><br><span style="opacity:.7;font-size:12px">' + ago(it.created) + ' &middot; ' + (it.segs || 0) + ' segments</span></div></div>' +
+    el.innerHTML = '<div style="display:flex;gap:8px;align-items:center"><img src="https://github.com/' + encodeURIComponent(it.author) + '.png?size=64" width="36" height="36" style="border-radius:50%" alt=""><div><b>' + esc(it.title) + '</b><br><a href="#" data-a="prof" style="color:#1d4ed8">@' + esc(it.author) + '</a><br><span style="opacity:.7;font-size:12px">' + ago(it.created) + ' &middot; ' + (it.segs || 0) + ' segments</span></div><div style="margin-left:auto;display:flex;align-items:center;gap:3px;align-self:flex-start"><button data-a="up" title="Upvote">\u25b2</button><button data-a="nup" title="See who upvoted">0</button><button data-a="down" title="Downvote">\u25bc</button><button data-a="ndown" title="See who downvoted">0</button></div></div>' +
       (it.desc ? '<p style="margin:8px 0;font-size:13px">' + esc(it.desc) + '</p>' : '') +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button data-a="up">\u25b2</button><button data-a="down">\u25bc</button><button data-a="who">Who voted</button><button data-a="cmt">\ud83d\udcac</button></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button data-a="open">Open in editor</button><button data-a="dl">Download</button><button data-a="rep">Report</button>' + (mine || (sess && sess.admin) ? '<button data-a="edit">Edit details</button><button data-a="del" style="color:#b91c1c">Delete</button>' : '') + (lastHits.length > 1 ? '<button data-a="sw">Switch (' + lastHits.length + ' overlap)</button>' : '') + '</div>';
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button data-a="cmt">\ud83d\udcac</button></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button data-a="open">Open in editor</button><button data-a="dl">Download</button><button data-a="rep">Report</button>' + (mine || (sess && sess.admin) ? '<button data-a="edit">Edit details</button><button data-a="del" style="color:#b91c1c">Delete</button>' : '') + (lastHits.length > 1 ? '<button data-a="sw">Switch (' + lastHits.length + ' overlap)</button>' : '') + '</div>';
     el.querySelectorAll('button').forEach(b => { b.style.cssText = 'padding:4px 8px;border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;cursor:pointer;font-size:12px'; b.onclick = () => { if (b.dataset.a === 'sw') chooser(lastHits, at || [it.lat, it.lng]); else act(b.dataset.a, it); }; });
+    el.querySelectorAll('[data-a=nup],[data-a=ndown]').forEach(b => { b.style.cssText = 'padding:2px 5px 2px 2px;border:0;background:none;cursor:pointer;font-size:13px;font-weight:600;text-decoration:underline;color:#374151;margin-right:4px'; });
     const pa = el.querySelector('a[data-a=prof]'); if (pa) pa.onclick = e => { e.preventDefault(); showProfile(it.author); };
     popEl = el; paintVotes(it); getVotes(it).then(() => { if (popEl === el) paintVotes(it); });
     L.popup({ maxWidth: 320 }).setLatLng(at || [it.lat, it.lng]).setContent(el).openOn(vmap);
@@ -13746,6 +13783,8 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     const sk = bx.querySelector('[data-a=sk]'); if (sk) sk.onclick = () => { close(); if ($('cv-q')) { $('cv-q').value = '@' + login; $('cv-s').value = 'new'; list(); if (ov) ov.style.display = 'flex'; } };
     const ed = bx.querySelector('[data-a=ed]'); if (ed) ed.onclick = () => { close(); editProfile(); };
   }
+  let subsP = null;      // the list of states / provinces per country (subdivisions.json, next to the page)
+  const subs = () => subsP || (subsP = fetch('subdivisions.json').then(r => r.ok ? r.json() : {}).catch(() => ({})));
   function editProfile() {
     if (!ready()) return; if (!sess) { signIn(editProfile); return; }
     const bx = document.createElement('div'); bx.textContent = 'Loading…'; const d = dlg('Your profile', bx);
@@ -13754,11 +13793,13 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
       codes.sort((x, y) => x[0].localeCompare(y[0]));
       bx.innerHTML = '<div style="font-size:12px;opacity:.7;margin-bottom:8px">Shown to everyone, with a link to your GitHub (@' + esc(sess.login) + ').</div>' +
         '<label style="display:block;font-size:12px;margin-bottom:2px">Country</label><select id="pf-c" style="' + INP + ';margin-bottom:8px"><option value="">(not shown)</option>' + codes.map(c => '<option value="' + c[1] + '"' + (p.cc === c[1] ? ' selected' : '') + '>' + flag(c[1]) + esc(c[0]) + '</option>').join('') + '</select>' +
-        '<label style="display:block;font-size:12px;margin-bottom:2px">State / province / region</label><input id="pf-r" maxlength="60" style="' + INP + ';margin-bottom:8px" value="' + esc(p.region || '') + '">' +
+        '<label style="display:block;font-size:12px;margin-bottom:2px">State / province / region</label><select id="pf-rs" style="' + INP + ';margin-bottom:8px;display:none"></select><input id="pf-r" maxlength="60" autocomplete="off" style="' + INP + ';margin-bottom:8px" value="' + esc(p.region || '') + '">' +
         '<label style="display:block;font-size:12px;margin-bottom:2px">Short bio <span id="pf-n" style="opacity:.6"></span></label><textarea id="pf-b" maxlength="160" rows="3" style="' + INP + '">' + esc(p.bio || '') + '</textarea>' +
         '<div style="margin-top:10px;text-align:right"><button type="button" id="pf-s" style="' + BTN + '">Save</button></div>';
+      let keep = p.region || '';
+      subs().then(M => { const fill = () => { const l = (M && M[$('pf-c').value]) || [], sel = $('pf-rs'), tx = $('pf-r'); if (l.length) { sel.innerHTML = '<option value="">(not shown)</option>' + l.map(n => '<option value="' + esc(n) + '"' + (n === keep ? ' selected' : '') + '>' + esc(n) + '</option>').join(''); sel.style.display = ''; tx.style.display = 'none'; } else { sel.style.display = 'none'; tx.style.display = ''; tx.value = keep; } }; $('pf-c').onchange = () => { keep = ''; fill(); }; fill(); });
       const cnt = () => { $('pf-n').textContent = '(' + $('pf-b').value.length + '/160)'; }; $('pf-b').oninput = cnt; cnt();
-      $('pf-s').onclick = async () => { try { const r = await api('/profile', { cc: $('pf-c').value, region: $('pf-r').value, bio: $('pf-b').value }); pc[sess.login.toLowerCase()] = r.profile; toast('Profile saved'); d.close(); } catch (e) { toast(e.message); } };
+      $('pf-s').onclick = async () => { try { const r = await api('/profile', { cc: $('pf-c').value, region: ($('pf-rs').style.display === 'none' ? $('pf-r').value : $('pf-rs').value), bio: $('pf-b').value }); pc[sess.login.toLowerCase()] = r.profile; toast('Profile saved'); d.close(); } catch (e) { toast(e.message); } };
     });
   }
   // votes
@@ -13766,7 +13807,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   const mineV = it => { const v = vc[it.id]; if (!v || !sess) return 0; return v.up.includes(sess.login) ? 1 : v.down.includes(sess.login) ? -1 : 0; };
   function paintVotes(it) {
     if (!popEl) return; const q = a => popEl.querySelector('[data-a=' + a + ']'), m = mineV(it), u = q('up'), d = q('down'), c = q('cmt'); if (!u) return;
-    u.textContent = '▲ ' + (it.up || 0); d.textContent = '▼ ' + (it.down || 0); c.textContent = '💬 ' + (it.cm || 0);
+    q('nup').textContent = it.up || 0; q('ndown').textContent = it.down || 0; c.textContent = '💬 ' + (it.cm || 0);
     u.style.background = m === 1 ? '#bbf7d0' : '#f9fafb'; d.style.background = m === -1 ? '#fecaca' : '#f9fafb';
   }
   async function vote(it, v) {
@@ -13774,11 +13815,11 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     if (sess.login.toLowerCase() === it.author.toLowerCase()) { toast('You cannot vote on your own sketch.'); return; }
     const r = await api('/vote', { id: it.id, v: mineV(it) === v ? 0 : v }); it.up = r.up; it.down = r.down; vc[it.id] = r.votes; paintVotes(it); list();
   }
-  async function showVoters(it) {
+  async function showVoters(it, side) {
     const bx = document.createElement('div'); bx.textContent = 'Loading…'; dlg('Votes: ' + it.title, bx);
-    const v = (await getVotes(it)) || { up: [], down: [] };
+    const v0 = (await getVotes(it)) || { up: [], down: [] }, v = { up: side < 0 ? [] : v0.up, down: side > 0 ? [] : v0.down };
     const col = (t, a, c) => '<div style="margin-bottom:10px"><div style="font-weight:600;color:' + c + ';margin-bottom:4px">' + t + ' (' + a.length + ')</div>' + (a.length ? a.map(who).join('<br>') : '<span style="opacity:.5">Nobody yet</span>') + '</div>';
-    bx.innerHTML = col('▲ Upvoted by', v.up, '#86efac') + col('▼ Downvoted by', v.down, '#fca5a5'); wirePf(bx);
+    bx.innerHTML = (side < 0 ? '' : col('▲ Upvoted by', v.up, '#86efac')) + (side > 0 ? '' : col('▼ Downvoted by', v.down, '#fca5a5')); wirePf(bx);
   }
   // comments
   async function showComments(it) {
@@ -13800,7 +13841,8 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     try {
       if (a === 'up') { await vote(it, 1); return; }
       if (a === 'down') { await vote(it, -1); return; }
-      if (a === 'who') { showVoters(it); return; }
+      if (a === 'nup') { showVoters(it, 1); return; }
+      if (a === 'ndown') { showVoters(it, -1); return; }
       if (a === 'cmt') { showComments(it); return; }
       if (a === 'open') { const t = await fetchSketch(it); askOverwrite(() => { ov.style.display = 'none'; loadData(t); cur = { id: it.id, title: it.title, desc: it.desc || '', author: it.author }; if (sess && (sess.login.toLowerCase() === it.author.toLowerCase() || sess.admin)) toast('Opened. Use Share sketch… to update it.'); }); }
       else if (a === 'dl') { const t = await fetchSketch(it); downloadData(JSON.parse(t), 'lanesketch-' + it.author, 'Downloaded'); }
@@ -13822,6 +13864,14 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     } catch (e) { toast(e.message); }
   }
   load(); paint();
+  function check() {      // a saved sign-in the Worker no longer accepts is dropped instead of pretending to be signed in
+    if (!sess || !C.worker) return;
+    fetch(C.worker.replace(/\/$/, '') + '/me', { method: 'POST', headers: { Authorization: 'Bearer ' + sess.session } }).then(r => {
+      if (r.status === 401) { sess = null; try { localStorage.removeItem(KEY); } catch (e) { } paint(); toast('Your GitHub sign-in expired. Please sign in again.'); return; }
+      return r.ok ? r.json() : null;
+    }).then(j => { if (j && j.login && sess) { sess.admin = !!j.admin; try { localStorage.setItem(KEY, JSON.stringify(sess)); } catch (e) { } } }).catch(() => { });
+  }
+  check();
   $('cm-in').onclick = () => signIn(); $('cm-out').onclick = signOut; $('cm-share').onclick = share; $('cm-view').onclick = openViewer; $('cm-prof').onclick = editProfile;
 })();
 </script>
