@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lanesketch.net blog</title>
+<meta name="description" content="News and notes from lanesketch.net: release updates and transportation insights.">
+<style>
+  body { margin:0; background:#e8e8e0; color:#222; font:15px/1.6 Georgia, "Times New Roman", serif; }
+  #page { max-width:700px; margin:0 auto; background:#fff; border-left:1px solid #bbb; border-right:1px solid #bbb; min-height:100vh; }
+  #top { background:#2b4a6f; color:#fff; padding:18px 22px 10px; border-bottom:4px solid #8aa6c8; }
+  #top h1 { margin:0; font-size:30px; font-weight:normal; letter-spacing:.5px; }
+  #top h1 a { color:#fff; text-decoration:none; }
+  #top p { margin:2px 0 0; font-size:13px; font-style:italic; color:#cfdcec; }
+  #tabs { margin:12px 0 0; padding:0; list-style:none; display:flex; gap:3px; }
+  #tabs a { display:block; padding:6px 14px; background:#8aa6c8; color:#10243d; text-decoration:none; font:bold 13px Verdana, sans-serif; border-radius:4px 4px 0 0; }
+  #tabs a.on { background:#fff; color:#2b4a6f; }
+  #body { padding:18px 22px 10px; }
+  .tab { display:none; }
+  .tab.on { display:block; }
+  .post { margin:0 0 30px; padding:0 0 18px; border-bottom:1px dotted #999; }
+  .post h2 { margin:0; font-size:21px; font-weight:bold; color:#2b4a6f; }
+  .post .date { font:11px Verdana, sans-serif; color:#777; margin:2px 0 10px; text-transform:uppercase; letter-spacing:.5px; }
+  .post h3 { font-size:15px; margin:14px 0 2px; }
+  .post p { margin:0 0 10px; }
+  .post ul { margin:0 0 10px; padding-left:22px; }
+  .soon { color:#777; font-style:italic; }
+  a { color:#1a4fa0; }
+  #foot { border-top:1px solid #bbb; margin:10px 22px 0; padding:10px 0 26px; font:11px Verdana, sans-serif; color:#666; }
+</style>
+</head>
+<body>
+<div id="page">
+  <div id="top">
+    <h1><a href="blog.html">lanesketch.net blog</a></h1>
+    <p>news and notes from the street diagram tool &middot; <a href="./" style="color:#fff">open the editor</a></p>
+    <ul id="tabs">
+      <li><a href="#updates" data-tab="updates">lanesketch.net updates</a></li>
+      <li><a href="#insights" data-tab="insights">Transportation insights</a></li>
+    </ul>
+  </div>
+
+  <div id="body">
+
+    <!-- ===================== TAB 1: lanesketch.net updates ===================== -->
+    <div class="tab" id="tab-updates">
+
+      <!-- HOW TO ADD A POST: copy one <div class="post"> ... </div> block, paste it as the FIRST block
+           right below this comment (newest on top), then change the title, date and text. -->
+
+      <div class="post">
+        <h2>Version 1.2.1: community sharing, better curves, and a long list of fixes</h2>
+        <div class="date">Posted: draft &middot; changes since 1.2.0</div>
+        <p>1.2.1 adds a community for sharing sketches, rebuilds how curves and radii work, and fixes a lot along the way.</p>
+
+        <h3>Community</h3>
+        <ul>
+          <li>Sign in with GitHub and share a sketch from the Share menu. You can update or delete your own at any time.</li>
+          <li>A community map (satellite by default) shows shared sketches as pins, then bounding boxes, then the drawings themselves as you zoom in. Where sketches overlap, you pick which one to view.</li>
+          <li>Vote on sketches, leave comments, and add a short profile linked to your GitHub.</li>
+        </ul>
+
+        <h3>Curves and drawing</h3>
+        <ul>
+          <li>Curve mode now makes a few clean radius nodes instead of many small points, and there is a new PC + PI + PT mode for every way type.</li>
+          <li>Every bend on a selected road, path or rail has a radius you can click and edit, and every draw mode has a radius box.</li>
+          <li>Changing the lane count keeps the radius. Splitting in the middle of a bend keeps the curve exactly.</li>
+          <li>Handles show on hover, direction arrows follow curves, and added lanes stay parallel instead of twisting.</li>
+          <li>Drawing modes now work when extending an existing road. The draw mode box moved to the bottom right of the map and can be dragged.</li>
+        </ul>
+
+        <h3>Rails</h3>
+        <ul>
+          <li>Rails use the same controls as roads: a lane-style edge handle to add or remove tracks, a plus at each track's end, and an arrow that extends a whole multi-track group together.</li>
+        </ul>
+
+        <h3>Islands</h3>
+        <ul>
+          <li>Right-click inside an area bounded by roads to add an island (concrete, grass, red or painted), with an optional centre island and fitted or circular shapes. It works inside a single self-crossing road too, fits flush to the surrounding pavement, and can be edited or deleted from the menu.</li>
+        </ul>
+
+        <h3>Intersections, crosswalks and sidewalks</h3>
+        <ul>
+          <li>Crosswalks now land exactly where you right-click, and raised-crosswalk arrows and stop bars line up on curved and multilane roads.</li>
+          <li>Corner sidewalk curves are editable, and white edge lines now follow the pavement outline of intersections.</li>
+          <li>Lane-adding handles stay visible on a selected segment, and centre turn lanes always start from their own node.</li>
+          <li>Redraw intersection now keeps its own materials (and a roundabout keeps its island and apron choice), and parking stall lines stay paint instead of turning into curbs.</li>
+          <li>Fixes to how levels stack on rails and in the intersection builder.</li>
+        </ul>
+
+        <h3>Signs and menus</h3>
+        <ul>
+          <li>Signs update live while you edit them, keep their size while zooming, can be uploaded from a link, and can be hidden with a Show signs toggle. Wood posts have a softer colour.</li>
+          <li>Right-click menus now keep track of where you clicked, even while you move the mouse to the menu.</li>
+          <li>Keybind hints now show at the bottom left in every mode outside the intersection builder.</li>
+          <li>An updated tutorial with highlighted buttons, and an optional file name box under Save / Load.</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- ===================== TAB 2: Transportation insights ===================== -->
+    <div class="tab" id="tab-insights">
+
+      <!-- Add posts here the same way (newest first), and delete the "coming soon" line when you do. -->
+
+      <p class="soon">Coming soon.</p>
+
+    </div>
+
+  </div>
+
+  <div id="foot">lanesketch.net &middot; <a href="https://github.com/lanesketch/app">Source code</a> &middot; <a href="mailto:contact@lanesketch.net">contact@lanesketch.net</a> &middot; <a href="https://discord.gg/gBCuBTGBXk">Discord</a></div>
+</div>
+<script>
+  // shows the tab named in the address (#updates or #insights); the first tab is the default
+  (function () {
+    var names = ['updates', 'insights'];
+    function show() {
+      var h = (location.hash || '').replace('#', ''); if (names.indexOf(h) < 0) h = names[0];
+      names.forEach(function (n) {
+        document.getElementById('tab-' + n).className = 'tab' + (n === h ? ' on' : '');
+        document.querySelector('#tabs a[data-tab=' + n + ']').className = n === h ? 'on' : '';
+      });
+    }
+    window.addEventListener('hashchange', show); show();
+  })();
+</script>
+</body>
+</html>
