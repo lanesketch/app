@@ -7562,7 +7562,8 @@
         (function customUrl() {
             const inp = $('bm-url'); try { inp.value = localStorage.getItem('lane_bm_url') || ''; } catch (e) { /* none */ }
             $('bm-url-go').onclick = () => {
-                const u = inp.value.trim();
+                // other tile sites name the placeholders differently ({zoom}, {level}, {Z}, {col}, {row}): they all mean {z}, {x}, {y}
+                const u = inp.value.trim().replace(/\{(zoom|level|lod|z)\}/gi, '{z}').replace(/\{(col|column|tilecol|x)\}/gi, '{x}').replace(/\{(row|tilerow|y)\}/gi, '{y}'); inp.value = u;
                 let ok = /^https:\/\//i.test(u) && !/\s/.test(u) && ['{z}', '{x}', '{y}'].every(t => u.includes(t));
                 if (ok) { try { const p = new URL(u.replace(/\{[^}]+\}/g, '1')); ok = p.protocol === 'https:' && !p.username && !p.password; } catch (e) { ok = false; } }
                 if (!ok) { showToast('Use an https:// URL containing {z}, {x} and {y}.'); return; }
