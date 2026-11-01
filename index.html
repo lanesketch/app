@@ -8094,31 +8094,35 @@ const hx=c=>(PAVE[c]||EXTRA_PAVE[c]||PAVE.asphalt).hex;
 // ---- nodes: every sub-lane end (plus tram, sidewalk and sidewalk bike-strip ends) of every completed road ----
 // A sidewalk node sits on the middle of the walk; it also carries the whole stack beside the road (curb edge, grass buffer, bike strip, walk).
 function nodes(){
- const out=[];
- allLanes.forEach(l=>{
-  if(!l.isCompleted||!l.points||l.points.length<2||(l.lvl||0)!==curLevel)return;
-  const n=l.totalLaneCount||1;let LY;try{LY=layout(l,n);}catch(e){return;}
-  const c=l.points.map(p=>[p.lng,p.lat]);
-  [true,false].forEach(s0=>{
-   const h=endDir(l.points,s0),e=s0?0:1;
+ const out=[];window.__ixSkip={other:0,bad:0};
+ allLanes.forEach(l0=>{try{
+  const l=l0;
+  if(!l.isCompleted||!l.points||l.points.length<2)return;
+  if((l.lvl||0)!==curLevel){window.__ixSkip.other++;return;}
+  const n=l.totalLaneCount||1;let LY;try{LY=layout(l,n);}catch(e){window.__ixSkip.bad++;return;}
+  const PP=l.points.filter((p,i,a)=>i===0||Math.abs(p.lat-a[i-1].lat)>1e-9||Math.abs(p.lng-a[i-1].lng)>1e-9);      /* a doubled point (a double-click finishing a road) would give a zero-length end and no direction */
+  if(PP.length<2){window.__ixSkip.bad++;return;}
+  const c=PP.map(p=>[p.lng,p.lat]),fin=q=>!!q&&isFinite(q[0])&&isFinite(q[1]);
+  [true,false].forEach(s0=>{try{
+   const h=endDir(PP,s0),e=s0?0:1;
    const put=(kind,key,q,role,w,x)=>out.push(Object.assign({key:l.id+':'+key+':'+e+':'+kind,end:l.id+':'+e,ll:q,h,kind,role,w,lvl:l.lvl||0},x||{}));
    for(let k=0;k<n;k++){
     const t=(l.types&&l.types[k])||'normal';if(isMedT(t))continue;
-    const sc=getOffsetCoordinates(c,laneCenterOff(l,n,k));if(!sc||sc.length<2)continue;
-    const q=s0?sc[0]:sc[sc.length-1],pt=[q[1],q[0]],arr=s0?l.dirs[k]===-1:l.dirs[k]===1;
+    const sc=getOffsetCoordinates(c,laneCenterOff(l,n,k));if(!sc||sc.length<2){window.__ixSkip.bad++;continue;}
+    const q=s0?sc[0]:sc[sc.length-1],pt=[q[1],q[0]],arr=s0?l.dirs[k]===-1:l.dirs[k]===1;if(!fin(q)){window.__ixSkip.bad++;continue;}
     put(isBikeT(t)?'bike':'road',k,pt,t==='bike2'?'both':(t==='turn'?'src':(arr?'src':'dst')),LY.ws[k],isBikeT(t)?{two:t==='bike2'}:null);      /* a center turn lane is shared by both directions: at an intersection its end is always an origin */
     if(l.tram&&l.tram[k])put('tram',k,pt,arr?'src':'dst',3.2);
    }
    ['l','r'].forEach(sd=>{const sw=l.sw&&l.sw[sd];if(!sw)return;
     const sg=sd==='l'?1:-1,E=LY.T/2+swPre(sw),buf=sw.buf>0.01?sw.buf:0,bw=sw.bike?swBikeW(sw):0,b2=bw>0||sw.w>0.01?swB2(sw):0,wk=sw.w>0.01?sw.w+b2:0;
-    const at=off=>{const sc=getOffsetCoordinates(c,off);if(!sc||sc.length<2)return null;const q=s0?sc[0]:sc[sc.length-1];return[q[1],q[0]];};
+    const at=off=>{const sc=getOffsetCoordinates(c,off);if(!sc||sc.length<2)return null;const q=s0?sc[0]:sc[sc.length-1];return fin(q)?[q[1],q[0]]:null;};
     const cb=at(sg*E);if(!cb)return;
     const stk={buf,bw,wk,pre:swPre(sw),bike:sw.bike||null,pave:sw.pave||'concrete',bikePave:sw.bikePave||bikeDefault(),bufMat:sw.bufMat||'grass'};
     if(wk>0){const q=at(sg*(E+buf+bw+wk/2));if(q)put('walk',sd,q,'both',wk,{curb:cb,stk,sg});}
     if(bw>0){const q=at(sg*(E+buf+bw/2));if(q)put('bike','s'+sd,q,'both',bw,{two:sw.bike==='two',curb:cb,stk,sg});}
    });
-  });
- });
+  }catch(er){window.__ixSkip.bad++;console.error(er);}});
+ }catch(er){window.__ixSkip.bad++;console.error(er);}});      /* one odd road no longer hides the lane ends of all the others */
  return out;
 }
 
@@ -10533,7 +10537,9 @@ function ui(){
    const rl=[a,b].filter(n=>n&&!n.virt),sameE=a&&b&&a.end===b.end;if(rl.length&&(sameE?(a.two&&b.two):rl.every(n=>n.two)))ixSetTwo(c,true,false);});}}catch(e){console.error(e);}      // a two-way corner meeting a one-way path tapers the same way whichever way the riders go
  try{rpRefresh(st.conns);}catch(e){console.error(e);}
  const mpp=metersPerPixel(),px=m=>Math.max(2,m/mpp),all=stageNodes(),byKey={};all.forEach(n=>byKey[n.key]=n);
- if(st.stage==='sel'){setTimeout(()=>{ixKeys();ixLevelLock(true);},0);all.forEach(n=>mk(n,st.sel.has(n.key)?'outline:3px solid #3b82f6;':'opacity:.75;',()=>{st.sel.has(n.key)?st.sel.delete(n.key):st.sel.add(n.key);ui();},st.tool==='pick'));panelUI();return;}
+ if(st.stage==='sel'){setTimeout(()=>{ixKeys();ixLevelLock(true);},0);all.forEach(n=>{try{mk(n,st.sel.has(n.key)?'outline:3px solid #3b82f6;':'opacity:.75;',()=>{st.sel.has(n.key)?st.sel.delete(n.key):st.sel.add(n.key);ui();},st.tool==='pick');}catch(er){console.error(er);}});
+  try{const sk=window.__ixSkip||{};if(sk.other&&!st._lvlHint){st._lvlHint=1;showToast(sk.other+' road'+(sk.other>1?'s are':' is')+' on another level, so '+(sk.other>1?'their':'its')+' lane ends are hidden here. Switch level to see '+(sk.other>1?'them':'it')+'.');}else if(sk.bad&&!st._badHint){st._badHint=1;showToast(sk.bad+' lane end'+(sk.bad>1?'s':'')+' could not be placed (a road with a doubled or zero-length end). Try re-drawing that end.');}}catch(er){}
+  panelUI();return;}
  const f=fillOf(st.conns);if(f)L.geoJSON(f,{interactive:false,style:{stroke:false,fillColor:'#374151',fillOpacity:.55}}).addTo(ixLayer);
  try{const P=partsCached(st,st.conns,()=>roadAllFor(curLevel,f),()=>medPolys(),curLevel,f,st.islands,st);st._liveP=P;drawParts(P,ixLayer,mpp,false);const inf=approach(st.conns,ixLayer,mpp,st,P);if(st.stage==='stop'){stopHandles(inf);rampHandles(P);}}catch(e){console.error(e);}
  try{drawIslandStage();}catch(e){console.error(e);}
@@ -13546,7 +13552,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     body.innerHTML = (mine ? '<div style="margin-bottom:8px;font-size:.85rem"><label style="display:block"><input type="radio" name="cs-m" value="up" checked> Update &ldquo;' + esc(cur.title) + '&rdquo; (replaces the shared drawing, same link)</label><label style="display:block"><input type="radio" name="cs-m" value="new"> Share as a new sketch</label></div>' : '') +
       '<label style="display:block;font-size:.8rem;margin-bottom:2px">Title</label><input id="cs-t" maxlength="80" style="' + TA + ';margin-bottom:8px" placeholder="e.g. Protected intersection, 5th &amp; Main">' +
       '<label style="display:block;font-size:.8rem;margin-bottom:2px">Description (optional)</label><textarea id="cs-d" maxlength="500" rows="3" style="' + TA + '"></textarea>' +
-      '<div style="font-size:.75rem;opacity:.75;margin-top:8px">Shared publicly as <b>@' + esc(mine ? cur.author : sess.login) + '</b>, pinned at ' + loc.lat.toFixed(3) + ', ' + loc.lng.toFixed(3) + ' (' + d.lanes.length + ' segments, ' + Math.round(size / 1024) + ' KB). Anyone can view and download it. You can delete or update it later from the Community window.</div>';
+      (isOgf() ? '<div style="font-size:.8rem;margin-top:8px;color:#b45309">Your basemap is OpenGeofiction, so this goes on the <b>OpenGeofiction community map</b>, separate from the Earth one.</div>' : '') + '<div style="font-size:.75rem;opacity:.75;margin-top:8px">Shared publicly as <b>@' + esc(mine ? cur.author : sess.login) + '</b>, pinned at ' + loc.lat.toFixed(3) + ', ' + loc.lng.toFixed(3) + ' (' + d.lanes.length + ' segments, ' + Math.round(size / 1024) + ' KB). Anyone can view and download it. You can delete or update it later from the Community window.</div>';
     if (mine) { $('cs-t') ; }
     let busy = false;
     openModal(mine ? 'Share or update sketch' : 'Share sketch with the community', body, 'Share', () => {
@@ -13554,12 +13560,21 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
       const t = $('cs-t').value.trim(); if (!t) { $('cs-t').focus(); return false; }
       const up = mine && (body.querySelector('input[name=cs-m]:checked') || {}).value === 'up';
       busy = true; toast(up ? 'Updating…' : 'Sharing…');
-      api('/upload', { id: up ? cur.id : undefined, title: t, desc: $('cs-d').value, lat: loc.lat, lng: loc.lng, data: d }).then(r => { if (up) { cur.title = t; cur.desc = $('cs-d').value; } toast(up ? 'Updated!' : 'Shared! Find it under Community.'); }).catch(e => toast(e.message)).then(() => { busy = false; });
+      api('/upload', { id: up ? cur.id : undefined, world: isOgf() ? 'ogf' : 'earth', title: t, desc: $('cs-d').value, lat: loc.lat, lng: loc.lng, data: d }).then(r => { if (up) { cur.title = t; cur.desc = $('cs-d').value; } toast(up ? 'Updated!' : 'Shared! Find it under Community.'); }).catch(e => toast(e.message)).then(() => { busy = false; });
     });
     if (mine) { $('cs-t').value = cur.title || ''; $('cs-d').value = cur.desc || ''; } 
     setTimeout(() => { const t = $('cs-t'); if (t) t.focus(); }, 30);
   }
   // ---- viewer ----
+  const isOgf = () => {      // is the map being drawn on an OpenGeofiction basemap? (any basemap whose address mentions it)
+    try {
+      if (typeof bmGroup !== 'undefined' && bmGroup === 'ogf') return true;
+      const v = BASEMAPS[bmGroup] && BASEMAPS[bmGroup].vars[bmVar[bmGroup]];
+      return /opengeofiction/i.test(String((bmLayer && bmLayer._url) || (v && v.url) || ''));
+    } catch (e) { return false; }
+  };
+  let world = 'earth', setWorld = null;
+  const wi = () => items.filter(it => (it.w === 'ogf' ? 'ogf' : 'earth') === world);
   let ov = null, vmap = null, items = [], pinLayer = null, rectLayer = null, geoLayer = null, sel = null, lastHits = [];
   const drawn = {}, geoP = {}, loading = {};
   const ZBOX = 15, ZGEO = 16;      // from this zoom: bounding boxes / the drawings themselves
@@ -13575,10 +13590,10 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   const bbLL = it => { const b = bbox(it), p = 0.00004; return L.latLngBounds([b[0] - p, b[1] - p], [b[2] + p, b[3] + p]); };
   function openViewer() {
     if (!ready()) return;
-    if (ov) { ov.style.display = 'flex'; refresh(); return; }
+    if (ov) { ov.style.display = 'flex'; const w0 = isOgf() ? 'ogf' : 'earth'; if (w0 !== world) setWorld(w0, true); refresh(); return; }
     ov = document.createElement('div'); ov.id = 'cm-ov';
     ov.style.cssText = 'position:fixed;inset:0;z-index:4000;background:#111827;display:flex;flex-direction:column;font:14px system-ui,sans-serif;color:#f3f4f6';
-    ov.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1f2937;border-bottom:1px solid #374151"><b style="font-size:16px">Community sketches</b><span id="cv-n" style="opacity:.7"></span><span style="flex:1"></span><button id="cv-x" type="button" style="background:#374151;color:#fff;border:0;border-radius:4px;padding:5px 12px;cursor:pointer">Close</button></div>' +
+    ov.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1f2937;border-bottom:1px solid #374151"><b style="font-size:16px">Community sketches</b><span id="cv-w" style="display:inline-flex;border:1px solid #4b5563;border-radius:5px;overflow:hidden"><button type="button" data-w="earth" style="border:0;padding:4px 10px;cursor:pointer;color:#fff">Earth</button><button type="button" data-w="ogf" style="border:0;padding:4px 10px;cursor:pointer;color:#fff">OpenGeofiction</button></span><span id="cv-n" style="opacity:.7"></span><span style="flex:1"></span><button id="cv-x" type="button" style="background:#374151;color:#fff;border:0;border-radius:4px;padding:5px 12px;cursor:pointer">Close</button></div>' +
       '<div style="flex:1;display:flex;min-height:0;flex-wrap:wrap"><div id="cv-map" style="flex:1 1 420px;min-height:260px"></div><div style="flex:0 0 320px;max-width:100%;display:flex;flex-direction:column;background:#111827;border-left:1px solid #374151;min-height:0;flex-grow:0"><div style="padding:8px;display:flex;gap:6px"><input id="cv-q" placeholder="Search title or @author" style="flex:1;min-width:0;padding:5px 8px;border-radius:4px;border:1px solid #4b5563;background:#1f2937;color:#fff"><select id="cv-s" style="background:#1f2937;color:#fff;border:1px solid #4b5563;border-radius:4px"><option value="new">Newest</option><option value="top">Top rated</option><option value="map">On map</option></select></div><div id="cv-l" style="flex:1;overflow:auto;padding:0 8px 8px"></div></div></div>';
     document.body.appendChild(ov);
     $('cv-x').onclick = () => { ov.style.display = 'none'; };
@@ -13587,8 +13602,22 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     vmap = L.map('cv-map', { worldCopyJump: true, maxZoom: 21 }).setView([20, 0], 2);
     const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics' }).addTo(vmap);
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
-    L.control.layers({ 'Satellite (Esri)': esri, 'Streets (OSM)': osm }, null, { position: 'topright' }).addTo(vmap);
+    const ogf = L.tileLayer('https://tile.opengeofiction.net/ogf-carto/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 18, attribution: '&copy; OpenGeofiction contributors' });
+    const ctl = L.control.layers({ 'Satellite (Esri)': esri, 'Streets (OSM)': osm }, null, { position: 'topright' });
+    setWorld = (w, first) => {      // the Earth map and the OpenGeofiction map are separate: different tiles, different sketches
+      world = w; vmap.closePopup();
+      [esri, osm, ogf].forEach(l => { if (vmap.hasLayer(l)) vmap.removeLayer(l); });
+      if (w === 'ogf') { if (ctl._map) ctl.remove(); ogf.addTo(vmap); } else { esri.addTo(vmap); if (!ctl._map) ctl.addTo(vmap); }
+      ov.querySelectorAll('#cv-w button').forEach(b => { b.style.background = b.dataset.w === w ? '#2563eb' : '#374151'; });
+      Object.keys(drawn).forEach(k => { geoLayer.removeLayer(drawn[k].g); delete drawn[k]; });
+      sel = null; lastHits = [];
+      const here = wi(); if (here.length && !first) { const b = L.latLngBounds(here.map(i => [i.lat, i.lng])); vmap.fitBounds(b.pad(0.3), { maxZoom: 6 }); } else if (!first) vmap.setView(w === 'ogf' ? [20.7, 86.7] : [20, 0], w === 'ogf' ? 4 : 2);
+      $('cv-n').textContent = here.length + ' sketch' + (here.length === 1 ? '' : 'es'); pins(); view(); list();
+    };
     pinLayer = L.layerGroup().addTo(vmap); rectLayer = L.layerGroup().addTo(vmap); geoLayer = L.layerGroup().addTo(vmap);
+    ov.querySelectorAll('#cv-w button').forEach(b => b.onclick = () => setWorld(b.dataset.w));
+    world = isOgf() ? 'ogf' : 'earth'; setWorld(world, true);
+    if (world === 'ogf') vmap.setView([20.7, 86.7], 4);
     $('cv-q').oninput = $('cv-s').onchange = list;
     vmap.on('moveend', () => { view(); if ($('cv-s').value === 'map') list(); });
     vmap.on('zoomend', restyleAll);
@@ -13598,13 +13627,13 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   async function refresh() {
     $('cv-l').innerHTML = '<div style="padding:12px;opacity:.7">Loading…</div>';
     try { items = (await fetchIndex()).slice().sort((a, b) => (b.created || '').localeCompare(a.created || '')); } catch (e) { $('cv-l').innerHTML = '<div style="padding:12px">' + esc(e.message) + '</div>'; return; }
-    $('cv-n').textContent = items.length + ' sketch' + (items.length === 1 ? '' : 'es');
+    $('cv-n').textContent = wi().length + ' sketch' + (wi().length === 1 ? '' : 'es');
     Object.keys(drawn).forEach(k => { geoLayer.removeLayer(drawn[k].g); delete drawn[k]; });
     setTimeout(() => { vmap.invalidateSize(); view(); }, 50); pins(); list();
   }
   function pins() {
     pinLayer.clearLayers();
-    items.forEach(it => {
+    wi().forEach(it => {
       const m = L.marker([it.lat, it.lng], { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 4px #000"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(pinLayer);
       m.on('click', e => { L.DomEvent.stopPropagation(e); onHit(m.getLatLng()); });
     });
@@ -13612,7 +13641,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   // what is under a click? (pins when far out, bounding boxes up close)
   function hits(ll) {
     const z = vmap.getZoom(), pt = vmap.latLngToContainerPoint(ll);
-    return items.filter(it => z >= ZBOX ? bbLL(it).contains(ll) : vmap.latLngToContainerPoint([it.lat, it.lng]).distanceTo(pt) <= 14);
+    return wi().filter(it => z >= ZBOX ? bbLL(it).contains(ll) : vmap.latLngToContainerPoint([it.lat, it.lng]).distanceTo(pt) <= 14);
   }
   function onHit(ll) {
     const hs = hits(ll); lastHits = hs; if (!hs.length) return;
@@ -13626,17 +13655,17 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   }
   function list() {
     const q = $('cv-q').value.trim().toLowerCase(), onMap = $('cv-s').value === 'map', b = vmap.getBounds();
-    const rows0 = items.filter(it => (!q || (it.title + ' @' + it.author + ' ' + (it.desc || '')).toLowerCase().includes(q)) && (!onMap || b.contains([it.lat, it.lng])));
+    const rows0 = wi().filter(it => (!q || (it.title + ' @' + it.author + ' ' + (it.desc || '')).toLowerCase().includes(q)) && (!onMap || b.contains([it.lat, it.lng])));
     const rows = $('cv-s').value === 'top' ? rows0.slice().sort((a, c) => ((c.up || 0) - (c.down || 0)) - ((a.up || 0) - (a.down || 0)) || (c.created || '').localeCompare(a.created || '')) : rows0;
     $('cv-l').innerHTML = rows.length ? rows.map(it => '<div class="cv-r" data-id="' + esc(it.id) + '" style="display:flex;gap:8px;padding:8px;margin-bottom:6px;border-radius:6px;background:#1f2937;cursor:pointer"><img src="https://github.com/' + encodeURIComponent(it.author) + '.png?size=64" width="32" height="32" style="border-radius:50%;flex:none" alt=""><div style="min-width:0"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis">' + esc(it.title) + '</div><div style="font-size:12px;opacity:.75">@' + esc(it.author) + ' &middot; ' + ago(it.created) + ' &middot; ' + (it.segs || 0) + ' seg' + ((it.up || it.down) ? ' &middot; \u25b2' + ((it.up || 0) - (it.down || 0)) : '') + (it.cm ? ' &middot; \ud83d\udcac' + it.cm : '') + '</div></div></div>').join('') : '<div style="padding:12px;opacity:.7">Nothing here yet.</div>';
-    $('cv-l').querySelectorAll('.cv-r').forEach(r => r.onclick = () => { lastHits = []; pick(items.find(i => i.id === r.dataset.id), true); });
+    $('cv-l').querySelectorAll('.cv-r').forEach(r => r.onclick = () => { lastHits = []; pick(wi().find(i => i.id === r.dataset.id), true); });
   }
   // ---- bounding boxes and the drawings ----
   function view() { if (!vmap) return; const z = vmap.getZoom(); if (z < ZBOX) { if (!vmap.hasLayer(pinLayer)) vmap.addLayer(pinLayer); } else if (vmap.hasLayer(pinLayer)) vmap.removeLayer(pinLayer); rects(); geoUpdate(); }
   function rects() {
     rectLayer.clearLayers(); if (vmap.getZoom() < ZBOX) return;
     const vb = vmap.getBounds().pad(0.2); let n = 0;
-    items.forEach(it => {
+    wi().forEach(it => {
       const bl = bbLL(it); if (n > 300 || !vb.intersects(bl)) return; n++;
       const on = sel && sel.id === it.id;
       L.rectangle(bl, { color: on ? '#ffffff' : '#f59e0b', weight: on ? 3 : 2, dashArray: on ? null : '6 4', fillColor: '#f59e0b', fillOpacity: on ? 0.12 : 0.05 })
@@ -13723,7 +13752,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     const z = vmap.getZoom(); let want = [];
     if (z >= ZGEO) {
       const vb = vmap.getBounds(), c = vmap.getCenter();
-      const inView = items.filter(it => vb.intersects(bbLL(it)));
+      const inView = wi().filter(it => vb.intersects(bbLL(it)));
       // sketches whose boxes overlap another one are drawn only once you pick them (otherwise they pile up)
       want = inView.filter(it => (sel && sel.id === it.id) || !inView.some(o => o !== it && bbLL(o).intersects(bbLL(it)))).sort((a, b) => (sel && sel.id === a.id ? -1 : 0) - (sel && sel.id === b.id ? -1 : 0) || c.distanceTo([a.lat, a.lng]) - c.distanceTo([b.lat, b.lng])).slice(0, 8);
     }
@@ -13775,7 +13804,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   async function showProfile(login) {
     const bx = document.createElement('div'); bx.textContent = 'Loading…'; const dh = dlg('@' + login, bx);
     let p = pc[login.toLowerCase()]; if (!p) { try { p = await get('/profile?u=' + encodeURIComponent(login)); pc[login.toLowerCase()] = p; } catch (e) { p = { login }; } }
-    const n = items.filter(i => i.author.toLowerCase() === login.toLowerCase()).length, loc = [p.region, p.cc ? cname(p.cc) : ''].filter(Boolean).join(', '), me = sess && sess.login.toLowerCase() === login.toLowerCase();
+    const n = wi().filter(i => i.author.toLowerCase() === login.toLowerCase()).length, loc = [p.region, p.cc ? cname(p.cc) : ''].filter(Boolean).join(', '), me = sess && sess.login.toLowerCase() === login.toLowerCase();
     bx.innerHTML = '<div style="display:flex;gap:12px;align-items:center"><img src="https://github.com/' + encodeURIComponent(login) + '.png?size=120" width="64" height="64" style="border-radius:50%" alt=""><div><div style="font-size:16px;font-weight:600">@' + esc(login) + '</div>' + (loc ? '<div style="opacity:.85">' + flag(p.cc) + esc(loc) + '</div>' : '<div style="opacity:.5">No location given</div>') + '</div></div>' +
       (p.bio ? '<p style="margin:12px 0;white-space:pre-wrap">' + esc(p.bio) + '</p>' : '<p style="margin:12px 0;opacity:.5">No bio yet.</p>') +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><a href="https://github.com/' + encodeURIComponent(login) + '" target="_blank" rel="noopener" style="' + BTN + ';text-decoration:none">GitHub profile</a>' + (n ? '<button type="button" data-a="sk" style="' + BTN + '">Their sketches (' + n + ')</button>' : '') + (me ? '<button type="button" data-a="ed" style="' + BTN + '">Edit profile</button>' : '') + '</div>';
