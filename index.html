@@ -13905,6 +13905,21 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   $('cm-in').onclick = () => signIn(); $('cm-out').onclick = signOut; $('cm-share').onclick = share; $('cm-view').onclick = openViewer; $('cm-prof').onclick = editProfile;
 })();
 </script>
+<script>
+// Closing or reloading the tab with a sketch that has not been saved asks first (browsers show their own wording; it cannot be changed)
+(function () {
+  let saved = null;
+  const sig = () => { try { return serializeLanes(allLanes) + JSON.stringify(allRails.map(r => r.points.map(p => [p.lat, p.lng]))); } catch (e) { return null; } };
+  const has = () => { try { return allLanes.some(l => l.isCompleted) || allRails.length > 0 || !!(window.ixSerialize && window.ixSerialize().length); } catch (e) { return false; } };
+  const d0 = window.downloadData; if (typeof d0 === 'function') window.downloadData = function (data, prefix) { const r = d0.apply(this, arguments); if (prefix === 'lanesketch') saved = sig(); return r; };
+  const l0 = window.loadData; if (typeof l0 === 'function') window.loadData = function () { const r = l0.apply(this, arguments); setTimeout(() => { saved = sig(); }, 0); return r; };
+  window.addEventListener('beforeunload', e => {
+    if (!has()) return;
+    if (saved !== null && sig() === saved) return;      // nothing changed since the last save or load
+    e.preventDefault(); e.returnValue = 'Your progress may not be saved.'; return e.returnValue;
+  });
+})();
+</script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bc47701a6c2d48beb7aec1542ee7f5d4"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
