@@ -1801,7 +1801,7 @@
                 const rawStyle = _mk.rest || (swEdge(lane, i, n) ? 'curb' : (swEdgeNone(lane, i, n) ? 'none' : undefined));
                 const cntMode = (typeof rawStyle === 'string' && /^(single|double):/.test(rawStyle)) ? rawStyle.slice(0, 6) : null;
                 const style = cntMode ? rawStyle.slice(7) : rawStyle;
-                const dashStr = style === 'extension' ? (1 / mpp) + ',' + (1 / mpp) : (3 / mpp) + ',' + (9 / mpp);
+                const dashStr = style === 'extension' ? (1 / mpp) + ',' + (0.85 / mpp) : (3 / mpp) + ',' + (9 / mpp);
                 if (style === 'curb' || medOf(lane, i)) { drawCurbLike(lane, coords, LY, i, mpp, style); continue; }
                 let bl = boundaryLines(lane, i, n).lines;
                 if (cntMode && bl.length && !(i > 0 && i < n)) {   // outer edge lines: single / double too
@@ -1860,7 +1860,7 @@
                     const emit = (x, y, sty, col, dash) => {
                         if (y - x < 1e-8 || sty === 'none') return;
                         const pts = turf.lineSliceAlong(line, x, y, { units: 'kilometers' }).geometry.coordinates; if (pts.length < 2) return;
-                        markLine(ll(pts), { color: sty === 'gore' ? (ln.forced ? col : '#ffffff') : col, weight: px * (thMul || (sty === 'gore' ? 1.5 : 1)), noClip: true, smoothFactor: 0, dashArray: dash ? (sty === 'extension' ? (1 / mpp) + ',' + (1 / mpp) : dashStr) : null });
+                        markLine(ll(pts), { color: sty === 'gore' ? (ln.forced ? col : '#ffffff') : col, weight: px * (thMul || (sty === 'gore' ? 1.5 : 1)), noClip: true, smoothFactor: 0, dashArray: dash ? (sty === 'extension' ? (1 / mpp) + ',' + (0.85 / mpp) : dashStr) : null });
                     };
                     segs.forEach(sg => {
                         const sty = lane.marks[i + ':' + (sg.inside ? 'in' : 'out')] || (sg.inside ? 'none' : null);
@@ -2083,7 +2083,7 @@
         function splitLaneAtIndex(lane, idx) {
             if (idx <= 0 || idx >= lane.points.length - 1) return;
             saveHistoryState();
-            const fs = splitFeats(lane, idx);
+            const fs = splitFeats(lane, idx), fa = featAbs(lane);      // (fa: where each feature really sits on the drawn road, so it can stay exactly there)
             const cpR = q => { const n = L.latLng(q.lat, q.lng); if (q.R > 0) n.R = q.R; return n; };      // (each half keeps the bend radii)
             const pts2 = lane.points.slice(idx).map(cpR);
             lane.points = lane.points.slice(0, idx + 1).map(cpR);
@@ -2092,6 +2092,10 @@
                 dirs: lane.dirs ? lane.dirs.slice() : undefined, types: lane.types ? lane.types.slice() : undefined, marks: Object.assign({}, lane.marks || {}), laneWidths: lane.laneWidths ? lane.laneWidths.slice() : undefined,
                 pave: lane.pave, paveSub: lane.paveSub ? lane.paveSub.slice() : undefined, paveExt: lane.paveExt ? lane.paveExt.slice() : undefined, ix: lane.ix ? Object.assign({}, lane.ix) : undefined, tram: lane.tram ? lane.tram.slice() : undefined, sw: lane.sw ? JSON.parse(JSON.stringify(lane.sw)) : undefined, lvl: lane.lvl || 0, feats: fs[1] });
             lane.feats = fs[0];
+            const nl = allLanes[allLanes.length - 1];
+            if (lane._Rd > 0) { try { Object.defineProperty(nl, '_Rd', { value: lane._Rd, writable: true, configurable: true, enumerable: false }); } catch (e) { nl._Rd = lane._Rd; } }      // both halves keep the same default bend radius
+            try { const r = featReassign(fa, lane, nl); if (r) { lane.feats = r[0]; nl.feats = r[1]; } } catch (e) { /* the length-based split stays */ }
+            try { const att = window.ixAtt ? window.ixAtt() : null; if (att && att.has(lane.id + ':1') && window.ixRemapLane) window.ixRemapLane(String(lane.id), String(nl.id), 1); } catch (e) { console.error(e); }      // an intersection on the far end stays on that end (now the new half's), so splitting a road never moves or redraws it
             updateLaneGraphics(); updateUndoRedoUI();
         }
 
@@ -4078,7 +4082,7 @@
             }
             if (style === 'curb') { poly(pts, { color: CURB_HEX, weight: Math.max(1, 0.3 / mpp) }); return; }
             if (style === 'none') { hit(); return; }
-            const gore = style === 'gore', dashStr = style === 'extension' ? (1 / mpp) + ',' + (1 / mpp) : (3 / mpp) + ',' + (9 / mpp);
+            const gore = style === 'gore', dashStr = style === 'extension' ? (1 / mpp) + ',' + (0.85 / mpp) : (3 / mpp) + ',' + (9 / mpp);
             const lines = cnt === 'double' ? [{ o: 0.15 }, { o: -0.15 }] : [{ o: 0 }];
             if ((style === 'pass_f' || style === 'pass_b') && lines.length === 2) lines[style === 'pass_f' ? 1 : 0].dash = true;
             lines.forEach(l => { const dash = !gore && (style === 'broken' || style === 'extension' || l.dash); poly(l.o ? getOffsetCoordinates(pts, l.o) : pts, { dashArray: dash ? dashStr : null }); });
@@ -4407,7 +4411,7 @@
                     const r = clipSplit(pc, blk.poly); r.out.forEach(x => nx.push(x));
                     if (sty && sty !== 'none') {
                         const o = Object.assign({}, opts);
-                        o.dashArray = (sty === 'solid' || sty === 'gore') ? null : sty === 'extension' ? (1 / mpp) + ',' + (1 / mpp) : (3 / mpp) + ',' + (9 / mpp);
+                        o.dashArray = (sty === 'solid' || sty === 'gore') ? null : sty === 'extension' ? (1 / mpp) + ',' + (0.85 / mpp) : (3 / mpp) + ',' + (9 / mpp);
                         if (sty === 'gore') o.color = '#ffffff';
                         r.inn.forEach(x => { if (x.length > 1) L.polyline(ll2(x), o).addTo(laneGroup); });
                     }
@@ -4637,6 +4641,25 @@
                     }
                 } catch (e) { console.error('feature', e); }
             });
+        }
+        // where each feature is on the road as drawn (the smoothed curve, on its own lane's line), as a point
+        function featAbs(lane) {
+            const fe = lane.feats || []; if (!fe.length) return [];
+            const path = lanePathCoords(lane), n = lane.totalLaneCount || 1, out = [];
+            fe.forEach(f => { try { const off = f.k >= 0 ? laneCenterOff(lane, n, Math.min(f.k, n - 1)) : 0, ln = turf.lineString(getOffsetCoordinatesRaw(path, off)), L0 = turf.length(ln, { units: 'meters' }); out.push({ f, off, pt: turf.along(ln, Math.max(0, Math.min(1, f.f)) * L0, { units: 'meters' }) }); } catch (e) { out.push({ f, pt: null }); } });
+            return out;
+        }
+        // after a split: each feature goes to the half it lies on, at the fraction of that half that puts it on the very same spot
+        function featReassign(fa, A, B) {
+            if (!fa.length) return null; const a = [], b = [];
+            const lines = [A, B].map(l => { const path = lanePathCoords(l); return off => { const ln = turf.lineString(getOffsetCoordinatesRaw(path, off)); return { ln, len: turf.length(ln, { units: 'meters' }) || 1 }; }; });
+            for (const q of fa) {
+                if (!q.pt) return null;
+                const ca = lines[0](q.off || 0), cb = lines[1](q.off || 0), na = turf.nearestPointOnLine(ca.ln, q.pt, { units: 'meters' }), nb = turf.nearestPointOnLine(cb.ln, q.pt, { units: 'meters' });
+                const useA = na.properties.dist <= nb.properties.dist, nn = useA ? na : nb, c = useA ? ca : cb;
+                (useA ? a : b).push(Object.assign({}, q.f, { f: Math.max(0, Math.min(1, nn.properties.location / c.len)) }));
+            }
+            return [a, b];
         }
         function splitFeats(lane, idx) {
             const fe = lane.feats || []; if (!fe.length) return [[], []];
@@ -4909,7 +4932,12 @@
                     return new Promise(res => { const fr = new FileReader(); fr.onload = () => { const s = String(fr.result); data[u] = s.replace(/^data:[^;,]*/, 'data:' + mt); res(); }; fr.onerror = () => res(); fr.readAsDataURL(b); });
                 }).catch(() => { /* left out of the export */ })));
             }
-            return { listCountries, category, search, series, code, preload, data };
+            // a search across every country's signs at once (plain Commons search of SVG drawings)
+            async function searchAll(q) {
+                const j = await get({ action: 'query', generator: 'search', gsrsearch: 'filetype:drawing ' + q, gsrnamespace: '6', gsrlimit: '100', prop: 'imageinfo', iiprop: 'url|size|mime', iiurlwidth: '96' });
+                const seen = new Set(); return ((j.query && j.query.pages) || []).map(rec).filter(r => r && !seen.has(r.file) && seen.add(r.file)).sort(cmp);
+            }
+            return { listCountries, category, search, searchAll, series, code, preload, data };
         })();
         window.WM = WM;
         window.wmPreload = () => { const u = []; allLanes.forEach(l => (l.feats || []).forEach(f => { if (f.t === 'sign' && f.src === 'wm' && f.url) u.push(f.url); })); return WM.preload(u); };
@@ -4917,12 +4945,15 @@
         // the Commons browser inside the sign picker: country -> its categories (or a search across all of them) -> signs
         function wmPanel(init, onPick) {
             const root = document.createElement('div'); root.className = 'wm-panel';
-            root.innerHTML = '<div class="wm-pick"><input type="search" class="wm-cq" placeholder="Search countries and regions…" autocomplete="off"><div class="wm-clist notranslate"></div></div>'
+            root.innerHTML = '<div class="wm-top" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><span style="font-size:.8rem;white-space:nowrap">Countries and regions:</span><input type="search" class="wm-cq" placeholder="Search countries and regions…" autocomplete="off" style="flex:1 1 130px;min-width:0;width:auto"><input type="search" class="wm-aq" placeholder="Search signs from all countries" autocomplete="off" style="flex:1 1 150px;min-width:0;width:auto"></div>'
+                + '<div class="sign-grid wm-aresults notranslate" style="display:none"></div>'
+                + '<div class="wm-pick"><div class="wm-clist notranslate"></div></div>'
                 + '<div class="wm-browse" style="display:none"><div class="wm-head"><button type="button" class="wm-back">&#8592; Countries</button><b class="wm-cname notranslate"></b></div>'
                 + '<input type="search" class="wm-q" placeholder="Search this country’s signs" autocomplete="off"><div class="wm-tree notranslate"></div><div class="sign-grid wm-results notranslate" style="display:none"></div></div>'
                 + '<div class="wm-note">Signs from <a href="https://commons.wikimedia.org/wiki/Category:Road_signs_by_country" target="_blank" rel="noopener">Wikimedia Commons</a>, read live. Each sign keeps its own license there.</div>';
             const pick = root.querySelector('.wm-pick'), cq = root.querySelector('.wm-cq'), clist = root.querySelector('.wm-clist'),
-                browse = root.querySelector('.wm-browse'), cname = root.querySelector('.wm-cname'), qIn = root.querySelector('.wm-q'), tree = root.querySelector('.wm-tree'), results = root.querySelector('.wm-results');
+                browse = root.querySelector('.wm-browse'), cname = root.querySelector('.wm-cname'), qIn = root.querySelector('.wm-q'), tree = root.querySelector('.wm-tree'), results = root.querySelector('.wm-results'),
+                aq = root.querySelector('.wm-aq'), ares = root.querySelector('.wm-aresults');
             let countries = null, country = null, sel = init && init.src === 'wm' ? init : null, tok = 0;
             ['keydown', 'keyup', 'keypress'].forEach(ev => root.addEventListener(ev, e => { if (e.target.tagName === 'INPUT') e.stopPropagation(); if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); if (e.target === cq) { const f = clist.querySelector('.wm-crow'); if (f) f.click(); } } }));
             const note = (el, t) => { el.innerHTML = '<div class="wm-msg">' + wmEsc(t) + '</div>'; };
@@ -4941,7 +4972,21 @@
                 if (!rows.length) { note(clist, 'No country or region matches.'); return; }
                 rows.forEach(c => { const b = document.createElement('button'); b.type = 'button'; b.className = 'wm-crow'; b.textContent = c.name; b.onclick = () => openCountry(c); clist.appendChild(b); });
             }
-            cq.addEventListener('input', paintCountries);
+            cq.addEventListener('input', () => { if (country) { country = null; browse.style.display = 'none'; pick.style.display = ''; } paintCountries(); });      // typing a country while browsing one goes back to the list
+            // the box on the right: signs from every country at once; clearing it brings back the country view
+            let atok = 0, at = null, aView = null;
+            async function doAll() {
+                const q = aq.value.trim();
+                if (!q) { ares.style.display = 'none'; if (aView) { pick.style.display = aView.p; browse.style.display = aView.b; aView = null; } return; }
+                if (!aView) aView = { p: pick.style.display, b: browse.style.display };
+                pick.style.display = 'none'; browse.style.display = 'none'; ares.style.display = '';
+                const my = ++atok; note(ares, 'Searching all countries…');
+                let rs; try { rs = await WM.searchAll(q); } catch (er) { if (my === atok) note(ares, 'Search failed (' + (er.message || 'network') + ').'); return; }
+                if (my !== atok) return; ares.innerHTML = '';
+                if (!rs.length) { note(ares, 'No signs match “' + q + '”.'); return; }
+                const h = document.createElement('div'); h.className = 'sign-head'; h.textContent = rs.length + ' sign' + (rs.length === 1 ? '' : 's') + ' matching “' + q + '” (all countries)'; ares.appendChild(h); rs.forEach(r => ares.appendChild(tile(r)));
+            }
+            aq.addEventListener('input', () => { clearTimeout(at); at = setTimeout(doAll, 450); });
             root.querySelector('.wm-back').onclick = () => { country = null; browse.style.display = 'none'; pick.style.display = ''; cq.focus(); };
             // ---- step 2: the country's own category tree, opened node by node ----
             function node(label, count, load, depth) {
@@ -8499,7 +8544,7 @@ function bikeZones(lvl,conns,f){
  conns.forEach(c=>{if(c.kind!=='bike')return;try{const w=(c.w||1.5)/2;let pg=stripPoly(twTrunc(c,conns,crossTrim(c,geom(c).coords)),-w,w);crossOutZ(c,conns).forEach(z=>{if(pg)try{pg=turf.difference(pg,z);}catch(e){}});if(pg){pg._conn=c;Z.push(pg);}}catch(e){}});      // (a crossing's zone stops at the corner path's outer edge too, so it never cuts the sidewalk beyond)
  return Z;
 }
-function cwTrim(pg,bands){      // a splitter against crosswalks: tip covering 2/3 of a crosswalk's width or less is cut back to it; more than that, the part under the crosswalk becomes concrete
+function cwTrim(pg,bands,thr){      // a splitter against crosswalks: tip covering 2/3 of a crosswalk's width or less is cut back to it; more than that, the part under the crosswalk becomes concrete
  const out={pg:null,conc:[]};
  const pts=g=>{try{const c=g.geometry||g;return c.type==='Polygon'?c.coordinates[0]:c.type==='MultiPolygon'?[].concat.apply([],c.coordinates.map(p=>p[0])):[];}catch(e){return[];}};
  const big=q=>{if(!q||!q.geometry)return null;if(q.geometry.type==='Polygon')return q;let b=null,ba=0;q.geometry.coordinates.forEach(pc=>{const p=turf.polygon(pc),a=turf.area(p);if(a>ba){ba=a;b=p;}});return b;};
@@ -8510,7 +8555,7 @@ function cwTrim(pg,bands){      // a splitter against crosswalks: tip covering 2
   const th=0.5*Math.atan2(2*sxy,sxx-syy),ux=-Math.sin(th),uy=Math.cos(th);      // the band's short axis: along the road
   const span=a=>{let lo=1e9,hi=-1e9;a.forEach(q=>{const v=q[0]*k*ux+q[1]*uy;lo=Math.min(lo,v);hi=Math.max(hi,v);});return hi-lo;};
   const cov=span(iv)/Math.max(1e-12,span(bv));
-  if(cov<=0.667){let q=null;try{q=big(turf.difference(out.pg||pg,growZ(b,0.05)));}catch(e){}if(q)out.pg=q;else{out.pg=null;out.drop=true;return out;}}
+  if(cov<(thr||0.667)){let q=null;try{q=big(turf.difference(out.pg||pg,growZ(b,0.05)));}catch(e){}if(q)out.pg=q;else{out.pg=null;out.drop=true;return out;}}
   else out.conc.push(ix);}
  return out;
 }
@@ -9032,7 +9077,8 @@ function partsOf0(conns,road,meds,lvl,fill,islands,S){
  }catch(e){console.error(e);}
  // islands: concrete / grass = curbed raised area, painted = outline + hatching (like a painted median)
  isls.forEach((is0,i)=>{let pg=sav[i];if(!pg)return;const k0=is0.kind||'concrete';
-  if(is0.rbs&&k0==='grass'&&(P.cwBand||[]).length){const tr=cwTrim(pg,P.cwBand);if(tr.drop)return;if(tr.pg){pg=tr.pg;is0=Object.assign({},is0,{ring:tr.pg.geometry.coordinates[0]});}tr.conc.forEach(z=>P.paint.push({poly:z,c:'concrete',merge:true,lvl}));}if(k0==='asphalt')return;if(k0==='red'){P.paint.push({poly:pg,c:'red',merge:false,lvl,isl:true});return;}      // no center island, red apron: the whole middle is red pavement
+  if(k0!=='asphalt'&&(P.cwBand||[]).length){      /* an island that covers less than 90% of a crosswalk's width is simply cut back to the crosswalk; a splitter that covers more carries the crossing (concrete under it) */
+   const tr=cwTrim(pg,P.cwBand,0.9);if(tr.drop)return;if(tr.pg){pg=tr.pg;is0=Object.assign({},is0,{ring:tr.pg.geometry.coordinates[0]});}if(is0.rbs&&k0==='grass')tr.conc.forEach(z=>P.paint.push({poly:z,c:'concrete',merge:true,lvl}));}if(k0==='asphalt')return;if(k0==='red'){P.paint.push({poly:pg,c:'red',merge:false,lvl,isl:true});return;}      // no center island, red apron: the whole middle is red pavement
   
   const apron=/_apron[pc]?$/.test(k0),k=k0.replace(/_apron[pc]?$/,'');let is=is0;
   if(apron){try{      // a mountable red apron round the edge (for truck trailers); the middle is grass or concrete as usual, and the raised curb sits on the apron's inner edge
@@ -9048,6 +9094,7 @@ function partsOf0(conns,road,meds,lvl,fill,islands,S){
     let rings=[is.ring];try{if(gb.length){const b0=turf.bbox(pg),near=gb.filter(z=>{const b=turf.bbox(z);return !(b[0]>b0[2]+1e-4||b[2]<b0[0]-1e-4||b[1]>b0[3]+1e-4||b[3]<b0[1]-1e-4);});if(near.length)rings=cut([is.ring],near).out;}}catch(e){rings=[is.ring];}
     try{if(P.cwCut.length)rings=cut(rings,P.cwCut).out;}catch(e){}
     try{const bz=shrinkZ(P.bz||[]);if(bz.length)rings=cut(rings,bz).out;}catch(e){}
+    try{(P.bz||[]).forEach(z=>{const zg=growZ(z,0.25),inner=shrinkZ([z],0.3),along=clipSplit(is.ring,zg).inn.filter(x=>x.length>1);if(along.length)(inner.length?cut(along,inner).out:along).forEach(x=>{if(x.length>1)rings.push(x);});});}catch(e){}      /* where a bike path crosses the island, the curb runs the whole width of the path on each side */
     rings.forEach(r=>{if(r.length>1)P.islCurbs.push(r);});
     try{const bf=turf.buffer(pg,is.rb?0.03:0.2,{units:'meters',steps:2});if(bf)P.grassZ.push(bf);}catch(e){}      // a roundabout island's own curb is the outline, so the road curbs that run into it stop exactly on that outline (no gap left as a notch)
    }
@@ -9233,6 +9280,7 @@ function rbArrowFor(o,px){const t=Array.from(o.mv),px_=o._px,near=o.rbs>0?['utur
  return rbArrowSvg(t,o._px,o.rbs<0);}
 function approach(conns,lg,mpp,S,PP){
  S=S||{};const stops=S.stops||{},stopEnd=S.stopEnd||{},stopDel=S.stopDel||{},stopSplit=S.stopSplit||{},arrowAt=S.arrowAt||{},arrowDel=S.arrowDel||{},stopYield=S.stopYield||{},final=(lg===laneGroup),info=[],lanes={};
+ if(!final)window.__ixBarLive=[];
  const edA=k=>arrowDel['ed:'+k]||null, mkEd=(k,cur,rb0,rbOk)=>({types:cur,rb:!!rb0,rbOk:!!rbOk,set:(a,rb)=>{S.arrowDel=S.arrowDel||{};S.arrowDel['ed:'+k]={a:a,rb:!!rb};}});      // an edited arrow is kept in the same record as deleted ones, under 'ed:'+key
 
  // raised-crosswalk ramp markings: right-click one to delete it, like any other marking
@@ -9279,7 +9327,7 @@ function approach(conns,lg,mpp,S,PP){
   groups.forEach(g=>{if(g.length>1){const m=g.reduce((a,u)=>a+u.s,0)/g.length;g.forEach(u=>{u.s=m;});}});
   const geo=u=>{const A=pathAt(u.P,u.s-0.375);return{c:A.p,t:A.t,n:[-A.t[1],A.t[0]],hw:u.w/2};};
   const P4=(g,a,b)=>[g.c[0]+g.n[0]*g.hw*a+g.t[0]*0.375*b,g.c[1]+g.n[1]*g.hw*a+g.t[1]*0.375*b];
-  const addPos=(u,kind)=>{if(!final)return;const g=geo(u),ll=toLL(g.c);
+  const addPos=(u,kind)=>{if(!final){try{const g=geo(u),ll=toLL(g.c);(window.__ixBarLive=window.__ixBarLive||[]).push({ll:L.latLng(ll[0],ll[1]),r:g.hw+1.5,key:u.key,kind,S});}catch(er){}return;}const g=geo(u),ll=toLL(g.c);      /* in the builder: remembered so a right-click can turn a bar into yield triangles (and back) */
    featPos.push({lane:{feats:[]},ft:{t:kind,ixs:true},ll:L.latLng(ll[0],ll[1]),r:g.hw+1.5,
     ixDel:()=>{S.stopDel=S.stopDel||{};S.stopDel[u.key]=true;},
     ixConv:t=>{S.stopYield=S.stopYield||{};if(t==='yield')S.stopYield[u.key]=true;else delete S.stopYield[u.key];}});};
@@ -9436,7 +9484,7 @@ function stopHandles(info){
  });
 }
 // ---- edge markings: type / number / thickness / color, optional start and end points along the edge ----
-const MKTH={thin:.1,normal:.15,thick:.25,xthick:.4},MKCOL={white:'#ffffff',yellow:'#facc15',red:'#dc2626'},MKDASH={broken:[3,9],ext:[1,1]};
+const MKTH={thin:.1,normal:.15,thick:.25,xthick:.4},MKCOL={white:'#ffffff',yellow:'#facc15',red:'#dc2626'},MKDASH={broken:[3,9],ext:[1,0.85],dot:[0.35,0.35]};
 function mkSpecOf(v){
  if(!v)return null;
  if(typeof v==='string'){const m={ws:['solid',1,'white'],wb:['broken',1,'white'],wd:['solid',2,'white'],ys:['solid',1,'yellow'],yb:['broken',1,'yellow'],yd:['solid',2,'yellow'],gore:['solid',1,'white','xthick'],ext:['ext',1,'white'],red:['solid',1,'red']}[v];return m?{t:m[0],n:m[1],col:m[2],th:m[3]||'normal',a:0,b:1}:null;}
@@ -9454,7 +9502,7 @@ function mkSelSpec(){      // the marking currently selected in the edge-marking
 }
 function mkPanel(){
  const sel=mkSelSpec(),m=sel?{type:sel.sp.t,num:sel.sp.n,th:sel.sp.th,col:sel.sp.col}:(st.mk||{}),S=(k,opts)=>'<select data-mk="'+k+'">'+opts.map(([v,t])=>'<option value="'+v+'"'+(String(m[k])===String(v)?' selected':'')+'>'+t+'</option>').join('')+'</select>';
- return 'Type '+S('type',[['solid','Solid'],['broken','Broken'],['ext','Extension']])+' Number '+S('num',[[1,'Single'],[2,'Double']])+' Thickness '+S('th',[['thin','Thin'],['normal','Normal'],['thick','Thick'],['xthick','X-thick']])+' Color '+S('col',[['white','White'],['yellow','Yellow'],['red','Red']])+' <span style="opacity:.75;font-size:.85em">'+(sel?'Drag the ends to change its extent; Del removes it.':'Click an edge to add a marking; click a blank stretch for another.')+'</span>';
+ return 'Type '+S('type',[['solid','Solid'],['broken','Broken'],['ext','Extension'],['dot','Dotted']])+' Number '+S('num',[[1,'Single'],[2,'Double']])+' Thickness '+S('th',[['thin','Thin'],['normal','Normal'],['thick','Thick'],['xthick','X-thick']])+' Color '+S('col',[['white','White'],['yellow','Yellow'],['red','Red']])+' <span style="opacity:.75;font-size:.85em">'+(sel?'Drag the ends to change its extent; Del removes it.':'Click an edge to add a marking; click a blank stretch for another.')+'</span>';
 }
 function markParts(c,P){
  if(!c.mk)return;const g=geom(c).coords,w=(c.w||3)/2;
@@ -9468,7 +9516,7 @@ function mkTwin(c,sd,e,pt){      // another path's edge running along this one w
  try{const ln=turf.lineString(e),len=turf.length(ln,{units:'meters'})||1,sm=[0.1,0.3,0.5,0.7,0.9].map(f=>turf.along(ln,f*len,{units:'meters'}));
   for(const c2 of st.conns){if(c2===c||(c2.kind!=='road'&&c2.kind!=='bike')||!c2.mk)continue;const g2=geom(c2).coords,w2=(c2.w||3)/2;
    for(const [sd2,sg2] of [['l',1],['r',-1]]){const l2s=mkList(c2,sd2);if(!l2s.length)continue;const e2=getOffsetCoordinatesRaw(g2,sg2*w2);if(e2.length<2)continue;const l2=turf.lineString(e2);
-    if(sm.filter(p=>turf.pointToLineDistance(p,l2,{units:'meters'})<0.35).length<3)continue;
+    if(sm.filter(p=>turf.pointToLineDistance(p,l2,{units:'meters'})<0.15).length<4)continue;      /* only an edge lying right on this one counts as the same line */
     const len2=turf.length(l2,{units:'meters'})||1,f2=turf.nearestPointOnLine(l2,pt,{units:'meters'}).properties.location/len2;
     const k=l2s.findIndex(sp=>f2>=(sp.a||0)&&f2<=(sp.b===undefined?1:sp.b));if(k>=0)return{cid:c2.id,sd:sd2,i:k};}}
  }catch(er){}return null;
@@ -9492,11 +9540,15 @@ function mkEdgeClick(ev,E){
 }
 function markEdges(){
  if(!st||st.stage!=='mark')return;
- const REG=[];
+ mkHov=null;window.__tutN=null;const REG=[];
  st.conns.forEach(c=>{if(c.kind!=='road'&&c.kind!=='bike')return;const g=geom(c).coords,w=(c.w||3)/2;
   [['l',1],['r',-1]].forEach(([sd,sg])=>{const e=getOffsetCoordinatesRaw(g,sg*w);if(e.length<2)return;const ll=e.map(q=>[q[1],q[0]]);
    const list=mkList(c,sd),ln=turf.lineString(e),len=turf.length(ln,{units:'meters'})||1,selI=(st.mkSel&&st.mkSel.cid===c.id&&st.mkSel.sd===sd)?(st.mkSel.i||0):-1;
    L.polyline(ll,{color:'#e5e7eb',weight:1.5,dashArray:'2,4',opacity:.9,interactive:false}).addTo(ixLayer);
+   try{if(window.__tutLtFlash&&(st.mk||{}).type==='ext'&&c.kind==='road'&&!list.some(q=>q.t==='ext')){      /* the tour: the inside edge of each turn that crosses opposing traffic flashes until it has an extension line */
+    const N=window.__tutN||(window.__tutN=nodes()),a=N.find(n=>n.key===c.ka),b=N.find(n=>n.key===c.kb);
+    if(a&&b){const cr=a.h[0]*(-b.h[1])-a.h[1]*(-b.h[0]),dt=a.h[0]*(-b.h[0])+a.h[1]*(-b.h[1]),ang=Math.atan2(cr,dt)*180/Math.PI,far=leftHandTraffic?ang<-35:ang>35;
+     if(far&&Math.abs(ang)<150&&sd===(leftHandTraffic?'r':'l'))L.polyline(ll,{color:'#facc15',weight:6,opacity:.9,interactive:false,className:'tut-flash-path'}).addTo(ixLayer);}}}catch(er){}
    if(selI>=0&&list[selI]){
     const sp=list[selI],a=sp.a||0,b=sp.b===undefined?1:sp.b;
     ['a','b'].forEach(which=>{const f=which==='a'?a:b,q=turf.along(ln,f*len,{units:'meters'}).geometry.coordinates;
@@ -9508,8 +9560,12 @@ function markEdges(){
     });
    }
    const self={c,sd,e,ln,len};REG.push(self);
-   L.polyline(ll,{className:'ix-hit',weight:14,opacity:0,bubblingMouseEvents:false}).addTo(ixLayer).on('click',ev=>{L.DomEvent.stopPropagation(ev);mkEdgeClick(ev,nearestEdge(REG,ev.latlng,self));});});});
+   L.polyline(ll,{className:'ix-hit',weight:14,opacity:0,bubblingMouseEvents:false}).addTo(ixLayer).on('click',ev=>{L.DomEvent.stopPropagation(ev);mkEdgeClick(ev,nearestEdge(REG,ev.latlng,self));})
+    .on('mousemove',ev=>{const E=nearestEdge(REG,ev.latlng,self);if(mkHov&&mkHov._E===E)return;if(mkHov)ixLayer.removeLayer(mkHov);mkHov=L.polyline(E.e.map(q=>[q[1],q[0]]),{color:'#22d3ee',weight:4,opacity:.85,interactive:false});mkHov._E=E;mkHov.addTo(ixLayer);})      /* the edge a click would pick lights up first, so close edges can be told apart */
+    .on('mouseout',()=>{if(mkHov){ixLayer.removeLayer(mkHov);mkHov=null;}});});});
+ window.__tutN=null;
 }
+let mkHov=null;
 
 // ---- hooks used by the rest of the app ----
 window.ixFillPolys=lvl=>allIx.filter(x=>(x.lvl||0)===lvl).map(x=>fillOf(x.conns)).filter(Boolean);
@@ -9542,6 +9598,7 @@ function ixStubLen(x,lane,e){
   return Math.max(10,Math.min(40,ext+3));
  }catch(er){return 12;}
 }
+window.ixRemapLane=(a,b,E)=>ixRemapLane(a,b,E);
 function ixRemapLane(oldId,newId,E){      // every saved reference to the far end E of a road now points at the new road that holds that end
  const esc=oldId.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),F=['conns','islands','stops','stopEnd','stopDel','stopSplit','arrowAt','arrowDel','stopYield','noAuto','rb'];
  const r1=new RegExp(esc+':([^:"]+):'+E+':','g'),r2=new RegExp(esc+':'+E+'(?![\\d:.])','g');const r3=new RegExp('rba:'+esc+':'+E+':','g');
@@ -9689,7 +9746,7 @@ window.ixRebuild=function(x,regen){
  try{
   open(x);
   if(!st||!on)return false;
-  if(regen){try{const _ends=new Set(nodes().filter(n=>st.sel.has(n.key)).map(n=>n.end));const _ns=nodes().filter(n=>n.kind==='road'&&_ends.has(n.end)).map(n=>n.key);if(_ns.length)st.sel=new Set(_ns);}catch(e){}try{st._oldMat={};st.conns.forEach(c=>{if(c.mat)st._oldMat[c.kind+':'+c.ka+':'+c.kb]=c.mat;});}catch(e){}buildAuto({keep:true});if(on){try{close();}catch(e){}if(!allIx.includes(x))allIx.push(x);return false;}return true;}      // the road itself changed (lanes, types, directions): the paths are guessed again, then everything is drawn as Build for me does
+  if(regen){try{const _ends=new Set(nodes().filter(n=>st.sel.has(n.key)).map(n=>n.end));const _ns=nodes().filter(n=>n.kind==='road'&&_ends.has(n.end)).map(n=>n.key);if(_ns.length)st.sel=new Set(_ns);}catch(e){}try{st._oldMat={};st.conns.forEach(c=>{if(c.mat)st._oldMat[c.kind+':'+c.ka+':'+c.kb]=c.mat;});}catch(e){}st._prevConns=(st.conns||[]).slice();buildAuto({keep:true});if(on){try{close();}catch(e){}if(!allIx.includes(x))allIx.push(x);return false;}return true;}      // the road itself changed (lanes, types, directions): the paths are guessed again, then everything is drawn as Build for me does
   if(st.rb&&st.rb.on){st.stage='island';st.rb.cOff=null;rbRegen();rbRefitCorners();st.pieces=islandPieces();}
   else{try{st.bikeExtra=(st.bikeExtra||(x.conns||[]).some(c=>c.bcorner&&(c.virtA||c.virtB)));}catch(e){}      // a road that had a bike corner but no bike path of its own keeps being drawn that way
    ['bike','walk'].forEach(k=>{if(hasKind(k)){st.stage=k;autoWalk(k);}});st.stage='island';try{st.pieces=islandPieces();}catch(e){}}
@@ -10117,7 +10174,7 @@ function edRedo(){st.hist=st.hist||[];st.redo=st.redo||[];edStep(st.redo,st.hist
 // ---- tool UI ----
 function mk(n,cls,cb,inter){
  const bg=n.role==='src'?'#22c55e':n.role==='dst'?'#f97316':'#a855f7';
- const m=L.marker(n.ll,{interactive:inter!==false,zIndexOffset:2000,icon:L.divIcon({className:'ix-node',iconSize:[16,16],iconAnchor:[8,8],html:'<div style="background:'+bg+';'+cls+'"></div>'})}).addTo(ixLayer);
+ const m=L.marker(n.ll,{interactive:inter!==false,zIndexOffset:2000,icon:L.divIcon({className:'ix-node',iconSize:[16,16],iconAnchor:[8,8],html:'<div data-kind="'+n.kind+'" data-key="'+String(n.key).replace(/"/g,'')+'" style="background:'+bg+';'+cls+'"></div>'})}).addTo(ixLayer);
  m.on('click',ev=>{L.DomEvent.stopPropagation(ev);cb(ev.originalEvent||{});});return m;
 }
 function endsOf(){const s=new Set();nodes().forEach(n=>{if(n.kind==='road'&&st.sel.has(n.key))s.add(n.end);});return s;}
@@ -11483,6 +11540,12 @@ function extCalc(){
   if(best){const w=best.w,pre=w.stk.pre||0;let xy=xyOf([w.curb[1],w.curb[0]],rf);if(pre>0.01){const nx=[-g.h[1],g.h[0]],lat=(g.c[0]-xy[0])*nx[0]+(g.c[1]-xy[1])*nx[1],sn=lat>=0?1:-1;xy=[xy[0]+nx[0]*sn*pre,xy[1]+nx[1]*sn*pre];}return{xy,sum:(w.stk.buf||0)+(w.stk.bw||0)+(w.stk.wk||0)+pre};}      // measured from the roadway's own (innermost) curb: a parking setback / shoulder moves it in from the sidewalk's curb
   const nx=[-g.h[1],g.h[0]],E=g.E;return{xy:[g.c[0]-sg*nx[0]*E,g.c[1]-sg*nx[1]*E],sum:0};};
  const cr=(a,b)=>a[0]*b[1]-a[1]*b[0],cor=[];
+ // a road meeting another one side-on stops short of that road's roadside features (sidewalk, grass, and above all a bike path), so the crossings there keep their room
+ G.forEach(g=>{g.cap=Infinity;G.forEach(g2=>{if(g2===g||g2.l===g.l)return;
+  const D0=cr(g2.h,[g.c[0]-g2.c[0],g.c[1]-g2.c[1]]),r=cr(g2.h,g.h);if(Math.abs(r)<0.5||D0*r>=0)return;      // only a road heading toward the other one's line
+  const d2=[-g2.h[0],-g2.h[1]],lat=d2[0]*(g.c[1]-g2.c[1])-d2[1]*(g.c[0]-g2.c[0]),sd=side(g2,lat>=0?1:-1),bike=g2.walk.some(w=>{const p=xyOf([w.ll[1],w.ll[0]],rf),la=d2[0]*(p[1]-g2.c[1])-d2[1]*(p[0]-g2.c[0]);return la*lat>0&&(w.stk.bw||0)>0;});
+  const need=g2.E+sd.sum+(bike?1.5:0.6),e=(Math.abs(D0)-need)/Math.abs(r);
+  if(sd.sum>0.01)g.cap=Math.min(g.cap,e);});});
  for(let i=0;i<G.length;i++){const ga=G[i],gb=G[(i+1)%G.length],a=side(ga,1),b=side(gb,-1),ha=ga.h,hb=gb.h;
   const pb=[b.xy[0]-a.xy[0],b.xy[1]-a.xy[1]],f=ha,g2=[-hb[0],-hb[1]],cc=cr(f,g2),dt=f[0]*g2[0]+f[1]*g2[1],phi=Math.atan2(Math.abs(cc),dt);
   const det=-ha[0]*hb[1]+hb[0]*ha[1];if(Math.abs(det)<1e-3||phi<0.12||phi>3.0)continue;
@@ -11491,7 +11554,7 @@ function extCalc(){
   ga.lim=Math.min(ga.lim,t-T);      // a corner that is already too tight holds its two roads where they are (retract off) or pulls them back (retract on)
   gb.lim=Math.min(gb.lim,sx-T);
   cor.push({ga,gb,t,s:sx,tn:tn*1.02});}
- G.forEach(g=>{let e=Math.min(40,g.lim);if(!isFinite(e))e=0;
+ G.forEach(g=>{let e=Math.min(40,g.lim,g.cap);if(!isFinite(e))e=0;
   if(!st.extRet)e=Math.max(0,e);else e=Math.max(e,-Math.min(40,g.seg*0.95));
   const pr=(cen[0]-g.c[0])*g.h[0]+(cen[1]-g.c[1])*g.h[1];      // a road never grows past the center of the junction
   e=Math.min(e,Math.max(0,pr-1));
@@ -11530,7 +11593,7 @@ function extSolve(){      // the real answer: first guess from the geometry, the
   if(G.length){
    G.forEach(g=>{st.extOrig.push({id:g.l.id,i:g.idx,lat:g.pt.lat,lng:g.pt.lng});g.base={lat:g.pt.lat,lng:g.pt.lng};});
    const setE=(g,e)=>{const z=llOf([g.h[0]*e,g.h[1]*e],[g.base.lng,g.base.lat]);g.pt.lat=z[1];g.pt.lng=z[0];g.e=e;};
-   const clampE=(g,e)=>{e=Math.max(-Math.min(40,g.seg*0.95),Math.min(40,e));if(!st.extRet)e=Math.max(0,e);const pr=(calc.cen[0]-g.c[0])*g.h[0]+(calc.cen[1]-g.c[1])*g.h[1];return Math.min(e,Math.max(0,pr-1));};
+   const clampE=(g,e)=>{e=Math.max(-Math.min(40,g.seg*0.95),Math.min(40,e,g.cap===undefined?Infinity:g.cap));if(!st.extRet)e=Math.max(0,e);const pr=(calc.cen[0]-g.c[0])*g.h[0]+(calc.cen[1]-g.c[1])*g.h[1];return Math.min(e,Math.max(0,pr-1));};
    G.forEach(g=>setE(g,clampE(g,g.e)));      // first guess from the geometry
    const byK={};G.forEach(g=>byK[g.k]=g);
    for(let it=0;it<6;it++){      // then check against the real corners and nudge each road until the tightest corner is the chosen radius
@@ -11586,8 +11649,16 @@ function buildAuto(opts){
  if(hasKind('tram')){st.stage='tram';guess();}
  if(rbOn){try{if(!keep){st.rb.bkc='off';st.rb.wkc='off';}st.rb.xw=false;}catch(e){}st.stage='rbt';st.rb.asked=true;if(!(keep&&st.rb.isl))st.rb.isl=rbIslLast()||'grass_apronc';if(!rbEnter(true)){st.rb.on=false;}}      // the roundabout step: the drawn movements become the ring
  const isRb=!!(st.rb&&st.rb.on&&st.rbBase);
- if(hasKind('bike')){st.stage='bike';autoWalk('bike');try{if(isRb){if(!(keep&&st.rb.bkc==='circ'))rbAutoCross('bike');}else autoTradCross('bike');}catch(e){console.error(e);}}      // the same automatic bike crossings as the button in the bike step
- if(hasKind('walk')){st.stage='walk';autoWalk('walk');try{if(isRb){if(!(keep&&st.rb.wkc==='circ'))rbAutoCross('walk');}else autoTradCross('walk');}catch(e){console.error(e);}}      // the same automatic crosswalks as the button in the sidewalk step
+ // a redraw keeps the crossings as they were chosen: automatic ones are made again, hand-drawn ones are carried over, and none are added where there were none
+ // (except bike crossings for a bike path that is new since the last build)
+ const prevC=keep&&Array.isArray(st._prevConns)?st._prevConns:null;st._prevConns=null;
+ const isCr=(c,k)=>c.kind===k&&(k==='walk'?!!c.cross:(!c.bcorner&&!c.corner));
+ const crossMode=k=>{if(!prevC)return 'auto';const pc=prevC.filter(c=>isCr(c,k));
+  if(k==='bike'){const was=new Set();prevC.filter(c=>c.kind==='bike').forEach(c=>{[c.ka,c.kb].forEach(q=>{if(q)was.add(q);});});const E=endsOf();if(nodes().some(n=>n.kind==='bike'&&E.has(n.end)&&!was.has(n.key)))return 'auto';}
+  if(pc.length&&pc.every(c=>c.axs||c.axo))return 'auto';return 'keep';};
+ const keepCr=k=>{const keys=new Set(nodes().map(n=>n.key));(prevC||[]).filter(c=>isCr(c,k)&&(!c.ka||keys.has(c.ka))&&(!c.kb||keys.has(c.kb))).forEach(c=>{if(!st.conns.some(q=>q.id===c.id))st.conns.push(JSON.parse(JSON.stringify(c)));});};
+ if(hasKind('bike')){st.stage='bike';autoWalk('bike');try{if(isRb){if(!(keep&&st.rb.bkc==='circ'))rbAutoCross('bike');}else if(crossMode('bike')==='auto')autoTradCross('bike');else keepCr('bike');}catch(e){console.error(e);}}      // the same automatic bike crossings as the button in the bike step
+ if(hasKind('walk')){st.stage='walk';autoWalk('walk');try{if(isRb){if(!(keep&&st.rb.wkc==='circ'))rbAutoCross('walk');}else if(crossMode('walk')==='auto')autoTradCross('walk');else keepCr('walk');}catch(e){console.error(e);}}      // the same automatic crosswalks as the button in the sidewalk step
  if(isRb&&st.rb.spl!=='none'){const sg=st.stage;st.stage='island';try{rbSetIslands();}catch(e){console.error(e);}st.stage=sg;}
  try{if(st._oldMat)st.conns.forEach(c=>{const m=st._oldMat[c.kind+':'+c.ka+':'+c.kb];if(m&&!c.mat)c.mat=m;});}catch(e){}
  ixCrossValidate();const n=st.conns.length;finish();
@@ -11779,7 +11850,11 @@ function open(edit){
 function ixMapVars(){try{const m=document.getElementById('map');if(!m)return;const r=m.getBoundingClientRect(),d=document.documentElement.style;d.setProperty('--mapL',r.left+'px');d.setProperty('--mapT',r.top+'px');d.setProperty('--mapW',r.width+'px');d.setProperty('--mapH',r.height+'px');}catch(e){}}      // full-screen popups cover and center on the map area only, never the toolbar
 window.addEventListener('resize',ixMapVars);window.addEventListener('load',()=>{ixMapVars();setTimeout(ixMapVars,800);});setTimeout(ixMapVars,200);try{new ResizeObserver(ixMapVars).observe(document.getElementById('map'));}catch(e){}
 function ixRightCancel(){if(!on||!st)return false;if(st.fd){st.fd=null;try{fdLayer.clearLayers();}catch(e){}ui();return true;}if(st.src&&(st.stage==='road'||st.stage==='tram')){st.src=null;st.rbWp=null;st.slipMode=false;ui();return true;}return false;}      // right-click cancels a crossing being drawn, or the picked origin
-window.addEventListener('contextmenu',e=>{try{if(!on||!st)return;const m=document.getElementById('map');if(!m||!m.contains(e.target))return;if(ixRightCancel()){e.preventDefault();e.stopPropagation();}}catch(er){}},true);
+window.addEventListener('contextmenu',e=>{try{if(!on||!st)return;const m=document.getElementById('map');if(!m||!m.contains(e.target))return;if(ixRightCancel()){e.preventDefault();e.stopPropagation();return;}
+ if(st.stage==='stop'){      /* the stop bars step: right-click a bar to turn it into yield triangles, right-click the triangles to make it a stop bar again */
+  const ll=map.mouseEventToLatLng(e);let best=null,bd=Infinity;(window.__ixBarLive||[]).forEach(b=>{const d=map.distance(ll,b.ll);if(d<=b.r&&d<bd){bd=d;best=b;}});
+  if(best){e.preventDefault();e.stopPropagation();ck();st.stopYield=st.stopYield||{};if(best.kind==='yield')delete st.stopYield[best.key];else st.stopYield[best.key]=true;ui();showToast(best.kind==='yield'?'Changed to a stop bar.':'Changed to yield triangles.');}}
+}catch(er){}},true);
 function ixLevelLock(lock){try{['lvl-up','lvl-down'].forEach(id=>{const b=document.getElementById(id);if(b){b.disabled=!!lock;b.style.opacity=lock?'.4':'';}});}catch(e){}}
 function ixKeys(){      // a live list of the keys that work right now, bottom-left of the map; each is also a button
  try{if(!on||!st)return;const m=document.getElementById('map');if(!m)return;let kb=document.getElementById('ix-keys');
@@ -12272,7 +12347,8 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     const FT = 0.3048;
     function newGuide() {      // about 800 ft across in total, fitted into the view
         const sz = map.getSize(), c = map.containerPointToLatLng([sz.x / 2, sz.y * 0.45]), R = 400 * FT, G = 60 * FT;
-        gPts = { c, wo: dest(c, R, 270), wi: dest(c, G, 270), eo: dest(c, R, 90), ei: dest(c, G, 90), so: dest(c, R, 180), si: dest(c, G, 180), gap: 72 * FT };
+        const h = defaultLaneWidthMeters / 2, sW = leftHandTraffic ? 0 : 180, sE = leftHandTraffic ? 180 : 0;      // right-hand traffic: the west road is drawn on its eastbound lane (half a lane south), the east road on its westbound lane (half a lane north)
+        gPts = { c, wo: dest(dest(c, R, 270), h, sW), wi: dest(dest(c, G, 270), h, sW), eo: dest(dest(c, R, 90), h, sE), ei: dest(dest(c, G, 90), h, sE), so: dest(c, R, 180), si: dest(c, G, 180), gap: 72 * FT };
         try { map.fitBounds(L.latLngBounds([gPts.wo, gPts.eo, gPts.so, dest(c, R * 0.55, 0)]), { padding: [70, 70], maxZoom: 19, animate: false }); } catch (e) { /* ignore */ }
     }
     // a road's end nearest the junction first, so lanes are listed looking outward
@@ -12388,7 +12464,9 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         { title: 'Welcome',
           body: '<p>This tutorial has you build a simple T intersection. Use <b>Next</b> when ready.</p>' },
         { el: () => $('bm-details'), enter: () => { const d = $('bm-details'); if (!d.open) { d.open = true; openedBm = true; } }, title: 'Pick a basemap',
-          body: '<p>Choose Satellite or OSM (the arrow beside each lists more maps) and fade the map with the opacity slider. The search bar above will take you to your desired start location: just input a place name or coordinates. Pan to a spot where you’d like to build your junction before proceeding.</p>' },
+          body: '<p>Choose Satellite or OSM (the arrow beside each lists more maps) and fade the map with the opacity slider.</p>' },
+        { el: () => $('search-box'), title: 'Find your spot', flash: () => [$('search-in')],
+          body: '<p>The search bar takes you to the place you want to sketch. Type a place name, street or address and pick a result, or enter <b>coordinates</b> (for example <i>41.8781, -87.6298</i>) to jump straight there.</p><p>Pan to a spot where you’d like to build your junction before proceeding.</p>' },
         { el: () => $('btn-toggle-lane'), dim: false, pos: 'bottom', guide: 'draw', title: 'Draw three roads', flash: () => { const b = $('btn-toggle-lane'); return b && !b.classList.contains('active') && arms().length < 3 ? [b] : []; },
           enter: () => { if (!base) base = new Set(allLanes.map(l => l.id)); showGuide('draw'); },
           body: '<p>Click <b>Lane Tool</b> and draw <b>three roads</b>, one along each dashed line: click one orange dot, click the other (they snap), then <b>double-click</b> to finish. Leave the gap in the middle empty.</p><p><i>Hint:</i> Drag the <b style="color:#f59e0b">orange center dot</b> to move your junction guidelines.</p>',
@@ -12412,52 +12490,63 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
           body: '<p>Right-click the <b>flashing westbound lane</b> of the west road, choose <b>Add Feature &rarr; Tram Rail</b>, and do the same on the east road. This westbound tram line runs through the junction; the builder will connect it up in an extra stage.</p>',
           tryIt: 'Add tram rail on the west and east roads', req: true, prog: () => ((hasTram(armOf('w')) ? 1 : 0) + (hasTram(armOf('e')) ? 1 : 0)) + ' / 2', done: () => hasTram(armOf('w')) && hasTram(armOf('e')) },
         { el: () => $('btn-toggle-ix'), dim: false, pos: 'bottom', title: 'Open the Intersection Builder', auto: true, flash: () => ixs() ? [] : [$('btn-toggle-ix')],
-          body: '<p>The roads are in place, so now we join them across the gap. Click <b>Intersection Builder</b>. A control strip appears at the top of the map and walks you through <b>eight stages</b>; we will do the ones this junction needs.</p>',
+          body: '<p>The roads are in place, so now we join them across the gap. Click <b>Intersection Builder</b>. The builder appears at the top of the map and walks you through <b>eight stages</b>; we will do the ones this junction needs.</p>',
           tryIt: 'Click Intersection Builder', req: true, done: () => !!ixs() },
         { el: ixPanel, dim: false, pos: 'bottom', gk: 'select', st: 0, auto: true, title: 'Stage 1: select lane ends',
-          body: '<p>The dots are lane ends. <b>Box</b> is the default mode (<b>Lasso</b> and <b>Click</b> work too). Drag a box around the <b>flashing yellow area</b> so you pick up the <b>six ends</b> facing the gap (two per road) and none of the far ends. Shift-drag removes dots.</p><p>When the strip says <b>6 picked</b>, continue.</p>',
-          tryIt: 'Pick the six ends around the gap', req: true, done: () => { const s = ixs(); return !!s && s.stage === 'sel' ? s.sel === 6 : stg() >= 1; } },
-        { el: ixPanel, dim: false, pos: 'bottom', title: 'Click Next in the strip', st: 0, flash: () => pb('next'),
-          body: '<p>Click <b style="background:#16a34a;color:#fff;padding:2px 9px;border-radius:5px;white-space:nowrap">Next &rarr;</b> in the strip at the top of the map (or press <kbd>Enter</kbd>) to move to <b>Stage 2: Lane paths</b>.</p>',
+          body: '<p>The dots are lane ends. <b>Box</b> is the default mode (<b>Lasso</b> and <b>Click</b> work too). Drag a box around the <b>flashing yellow area</b> so you pick up the <b>seven ends</b> facing the gap (three on the south road, two on each of the others) and none of the far ends. Shift-drag removes dots.</p><p>When the builder says <b>7 picked</b>, click <b>Next</b>.</p>',
+          tryIt: 'Pick the seven ends around the gap', req: true, done: () => { const s = ixs(); return !!s && s.stage === 'sel' ? s.sel === 7 : stg() >= 1; } },
+        { el: ixPanel, dim: false, pos: 'bottom', title: 'Click Next in the builder', st: 0, flash: () => pb('next'),
+          body: '<p>Click <b style="background:#16a34a;color:#fff;padding:2px 9px;border-radius:5px;white-space:nowrap">Next &rarr;</b> in the builder at the top of the map (or press <kbd>Enter</kbd>) to move to <b>Stage 2: Lane paths</b>.</p>',
           tryIt: 'Advance to Lane paths', req: true, auto: true, done: () => stg() >= 1 },
         { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 2: lane paths', st: 1, flash: () => { const s = ixs(); return nextOr(s && s.roads >= 6, 'guess'); },
-          body: '<p>Paths show where traffic can go from each incoming lane. Press <b>Guess</b> to draw them automatically. You can also click a green origin dot, then each destination dot, or click a path and press <kbd>Del</kbd> to remove it. Click a path to reshape it with its blue handles.</p>',
+          body: '<p>Paths show where traffic can go from each incoming lane. Press <b>Guess</b> to draw them automatically. You can also click a green origin dot, then each destination dot, or click a path and press <kbd>Del</kbd> to remove it. Click a path to reshape it with its blue handles.</p><p>Press <b>Next</b> when done.</p>',
           tryIt: 'Press Guess (six paths for a T)', req: true, prog: () => { const s = ixs(); return (s ? s.roads : 0) + ' / 6'; }, done: () => { const s = ixs(); return !!s && s.roads >= 6; } },
         { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 3: tram paths', st: 2, flash: () => { const s = ixs(); return nextOr(s && s.tr > 0, 'guess'); },
           body: '<p>Press <b>Guess</b> to connect the tram line through the junction, then <b>Next</b>.</p>',
           tryIt: 'Guess the tram path, then Next', done: () => stg() >= 3, auto: true },
-        { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 4: bike paths', st: 3, flash: () => { const s = ixs(); return !s ? [] : s.bx > 0 ? pb('next', 'finish') : (s.xm ? [] : pb('xwmode')); },
-          body: '<p>The two-way bike paths you added meet the junction here. Automatic crossings do not suit a two-way path, so press <b>Draw manually</b>, click the <b>end of one bike path</b>, then the <b>start of the next</b> across the south road. A selected crossing has a blue handle to slide it along the road. Then press <b>Next</b>.</p>',
+        { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 4: bike paths', st: 3, flash: () => { const s = ixs(); if (!s) return []; if (s.bx > 0) return pb('next', 'finish'); if (!s.xm) return pb('xwmode'); return [...document.querySelectorAll('.ix-node div[data-kind="bike"]')]; },
+          body: '<p>The two-way bike paths you added meet the junction here. Automatic crossings do not suit a two-way path, so press <b>Draw manually</b>, click the <b>flashing end of one bike path</b>, then the <b>flashing start of the other</b> across the south road. A selected crossing has a blue handle to slide it along the road. Then press <b>Next</b>.</p>',
           tryIt: 'Draw the bike crossing, then Next', prog: () => { const x = ixs(); return (x ? x.bx : 0) + ' drawn'; }, req: true, auto: true, done: () => stg() >= 4 },
         { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 5: sidewalk corners and crosswalks', st: 4, flash: () => { const s = ixs(); return nextOr(s && s.wx > 0, 'tcx', 'rbxs'); },
-          body: '<p>The sidewalks you added now meet round each corner of the T. Press <b>Auto crosswalks</b> to put a crosswalk across each road. Click a crosswalk to slide it along the road or pick its type (Continental, Ladder, Raised); click a corner path\u2019s line to reshape it.</p><p>Press <b>Next</b> when done.</p>',
+          body: '<p>The sidewalks you added now meet around each corner of the T. Press <b>Auto crosswalks</b> to put a crosswalk across each road. Click a crosswalk to slide it along the road or pick its type (Continental, Ladder, Raised); click a corner path’s line to reshape it.</p><p>Press <b>Next</b> when done.</p>',
           tryIt: 'Press Auto crosswalks, then Next', req: true, auto: true, done: () => stg() >= 5 },
         { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 6: islands', st: 5, flash: () => { const s = ixs(); return s && s.islands > 0 ? pb('next', 'finish') : pb('fillall', 'next'); },
           body: '<p>Yellow shapes are the gaps between travel paths. Pick a <b>Type</b> (Concrete, Grass, Red or Painted), then click a gap to fill it, or use <b>Fill all</b>. Click an island to remove it; each island also has its own small type menu. A small T may have few or no gaps, which is fine.</p><p>Press <b>Next</b> when done.</p>',
           tryIt: 'Optional: add an island, then Next', auto: true, done: () => { const s = ixs(); return stg() >= 6 || (!!s && s.islands > 0); } },
         { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 7: stop bars', st: 6, flash: () => pb('next'),
-          body: '<p>Stop bars start where the lanes diverge. The south road\u2019s two lanes toward the junction share an approach: drag the <b>blue square</b> to slide both bars together, or an <b>orange dot</b> to move one lane\u2019s. Click a dot or the square to remove or restore bars, and right-click a bar to turn it into yield triangles.</p><p>Press <b>Next</b> to continue.</p>',
+          body: '<p>Stop bars start where the lanes diverge. The south road’s two lanes toward the junction share an approach: drag the <b>blue square</b> to slide both bars together, or an <b>orange dot</b> to move one lane’s. Click a dot or the square to remove or restore bars, and right-click a bar to turn it into yield triangles.</p><p>Press <b>Next</b> to continue.</p>',
           tryIt: 'Reach Stage 8', auto: true, done: () => stg() >= 7 },
-        { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 8: edge markings, then Finish', st: 7, flash: () => pb('finish'),
-          body: '<p>Click the dotted edge of a path to add a line marking. It is selected right away: drag its two <b>end handles</b> along the edge to change where it starts and stops, press <kbd>Del</kbd> to remove it, and change its type, number, thickness or color in the strip.</p><p>Press <b>Finish &#10003;</b> in the strip to create the intersection. <b>Back</b> returns to any earlier stage.</p>',
-          tryIt: 'Press Finish', req: true, done: () => !!(window.ixSerialize && window.ixSerialize().length) && !ixs() },
-        { dim: false, pos: 'bottom', title: 'Select, edit and delete', flash: () => menuPath('ctx-ix-edit'),
-          body: '<p>A finished intersection is its own object. <b>Click</b> it to select, <kbd>Del</kbd> removes the selection, and <b>right-click</b> it for <b>Edit Intersection&hellip;</b> or <b>Delete</b>.</p><p>Let\u2019s reopen the editor: right-click the junction and choose <b>Edit Intersection&hellip;</b>.</p>',
+        { el: ixPanel, dim: false, pos: 'bottom', title: 'Stage 8: edge markings, then Finish', st: 7, auto: true,
+          enter: () => { window.__tutLtFlash = true; }, leave: () => { window.__tutLtFlash = false; },
+          flash: () => { const p = ixPanel(), t = p && p.querySelector('select[data-mk="type"]'); if (t && t.value !== 'ext' && !(ixs() && ixs().mkSel)) return [t]; return pb('finish'); },
+          body: '<p>Edge markings are lines along the sides of the paths. Set <b>Type</b> to <b>Extension</b> in the builder, then click the <b>flashing curved edges</b> (the inside edge of each left turn) to add extension lines that guide drivers through the turn. A new marking is selected right away: drag its two <b>end handles</b> along the edge to change where it starts and stops, or press <kbd>Del</kbd> to remove it.</p><p>Press <b>Finish &#10003;</b> in the builder to create the intersection. <b>Back</b> returns to any earlier stage.</p>',
+          tryIt: 'Add extension lines, then press Finish', req: true, done: () => !!(window.ixSerialize && window.ixSerialize().length) && !ixs() },
+        { dim: false, pos: 'bottom', title: 'Select, edit and delete', flash: () => menuPath('ctx-ix-edit'), auto: true, delay: 1000,
+          body: '<p>A finished intersection is its own object. <b>Click</b> it to select it; <kbd>Del</kbd> then deletes the intersection, and clicking somewhere else removes the selection. <b>Right-click</b> it for <b>Edit Intersection&hellip;</b> or <b>Delete</b>.</p><p>Let’s reopen the editor: right-click the junction and choose <b>Edit Intersection&hellip;</b>.</p>',
           tryIt: 'Reopen the editor from the right-click menu', req: true, done: () => { const s = ixs(); return !!s && s.edit; } },
-        { el: ixPanel, dim: false, pos: 'bottom', title: 'Editing keeps your work', flash: () => pb('finish', 'next'),
+        { el: ixPanel, dim: false, pos: 'bottom', title: 'Editing keeps your work', flash: () => pb('finish', 'next'), auto: true, delay: 1000,
           body: '<p>The editor reopens on the same paths, islands and stop bars. Use <b>Back</b> and <b>Next</b> to change any stage, then <b>Finish</b> to save the changes. <b>Cancel</b> keeps the old version, and <b>Delete intersection</b> removes it.</p>',
           tryIt: 'Press Finish or Cancel', req: true, done: () => !ixs() },
-        { title: 'Join from anywhere',
-          body: '<p>A new lane (or sidewalk, bike path, rail) can start on the end of any existing one. It can also start or end on the <b>middle</b> of another lane: that lane is cut there so the new one joins it cleanly.</p>' },
-        { el: sec('btn-toggle-lane'), title: 'Sidewalks, bike paths and rail',
-          body: '<p><b>Path Tool</b>, <b>Bike Path Tool</b> and <b>Rail Tool</b> draw standalone ways. A path, bike path, or railway dragged over a road gets a crossing automatically.</p>' },
+        { dim: false, pos: 'bottom', title: 'Extending and joining', enter: () => { joinBase = joinSig(); },
+          flash: () => { const b = $('btn-toggle-lane'); return b && !b.classList.contains('active') ? [b] : []; },
+          body: '<p>A road can grow from its end, and a new lane can start on the end of any existing one or on the <b>middle</b> of another lane (that lane is cut there so the new one joins it cleanly).</p><p>Try it: open the <b>Lane Tool</b>, go to the <b>east end of the eastern road</b>, and hover it to show its <b style="color:#3b82f6">plus</b>. Click the plus to extend a lane, click to add points, then <b>double-click</b> to finish.</p>',
+          tryIt: 'Extend a lane from the east end of the east road', req: true, done: () => joinBase !== null && joinSig() !== joinBase },
+        { el: () => $('btn-toggle-walk'), dim: false, pos: 'bottom', title: 'Draw a path across a road', enter: pathEnter,
+          flash: () => { const b = $('btn-toggle-walk'); pathRings(); return b && !(railToolOn && railToolKind === 'walk') ? [b] : []; },
+          body: '<p><b>Path Tool</b>, <b>Bike Path Tool</b> and <b>Rail Tool</b> draw standalone ways. A path, bike path or railway drawn over a road gets a crossing automatically.</p><p>Try it: click <b>Path Tool</b>, then draw across the <b>eastern road</b> from <b>north to south</b> in the middle of the segment: click the <b>first flashing point</b>, then <b>double-click the second</b> to finish.</p>',
+          tryIt: 'Draw a path across the east road', req: true, done: pathDone },
         { el: () => $('btn-measure'), title: 'Measuring',
-          body: '<p>The <b>Measure</b> tool, beside the select tools, lets you measure distances on the map. <b>Display settings</b> holds Show dimensions (cross-section widths when zoomed in), direction arrows, length labels and the sign size.</p>' },
+          body: '<p>The <b>Measure</b> tool, beside the select tools, lets you measure distances on the map: click to start, click again for each point, and the total length is shown as you go.</p>' },
+        { el: () => $('bm-details'), enter: () => { const d = $('bm-details'); if (!d.open) { d.open = true; openedBm = true; } }, title: 'Display settings',
+          body: '<p><b>Display settings</b> changes how the map is drawn, without changing your sketch: <b>Show dimensions</b> (cross-section widths when zoomed in), <b>Direction arrows</b>, <b>Length labels</b>, <b>Show signs</b> and the <b>Sign size</b> slider, plus the basemap and its opacity.</p>' },
+        { dim: false, pos: 'bottom', title: 'Add a roadside sign', enter: signEnter, flash: signFlash,
+          body: '<p>Right-click beside the road near the <b>stop bar of the westbound lanes on the east road</b> (the flashing ring), then choose <b>Add &rarr; Roadside Sign&hellip;</b>.</p><p>In the sign picker, the left box searches <b>countries and regions</b>; the box on the right searches <b>signs from all countries</b>. Type <b>Stop sign</b> in the right one and pick a sign. Then give it a post: tick <b>Post</b> and set its <b>Type</b> to <b>Round steel pipe</b>, then press <b>Place</b>.</p>',
+          tryIt: 'Place a stop sign on a round post', req: true, done: () => signBase !== null && signPiped() > 0 },
         { el: () => $('tr-file') || $('btn-save'), enter: () => { if (window.__openTr) window.__openTr('file'); }, title: 'Save and Load',
           body: '<p><kbd>' + mod + '</kbd>+<kbd>S</kbd> instantly saves your sketch locally. The <b>Save / Load</b> menu lets you save either a portion or all of your sketch, load another sketch into this one, or close this one and load a different sketch instead.</p>' },
         { el: () => $('lane-w-num'), title: 'Width and material',
           body: '<p>The slider (or typing a width) sets lane width. The colors under <b>Pavement Material</b> paint whatever is selected, including segments, bike paths and intersections.</p>' },
-        { el: () => $('sel-tools'), title: 'Select several things', flash: () => (typeof selTool !== 'undefined' && selTool !== 'pointer') ? [] : [...document.querySelectorAll('#sel-tools .sel-btn')],
+        { el: () => document.querySelector('#sel-tools .sel-btn[data-t="lasso"]') || $('sel-tools'), title: 'Select several things', flash: () => (typeof selTool !== 'undefined' && selTool !== 'pointer') ? [] : [...document.querySelectorAll('#sel-tools .sel-btn[data-t="box"], #sel-tools .sel-btn[data-t="lasso"]')],
           body: '<p><b>Box</b> and <b>Lasso</b> select segments, nodes and intersections together. Hold <kbd>Shift</kbd> to add. Drag any selected node to move them all; <kbd>Del</kbd> deletes, <kbd>Esc</kbd> deselects.</p>',
           tryIt: 'Turn on Box or Lasso', done: () => typeof selTool !== 'undefined' && selTool !== 'pointer' },
         { el: () => $('regional-details'), enter: () => { const d = $('regional-details'); if (d && !d.open) d.open = true; }, title: 'Regional settings',
@@ -12467,9 +12556,56 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         { el: () => $('btn-crop'), enter: () => { if (window.__openTr) window.__openTr('share'); }, title: 'Save a picture', flash: () => { const b = $('crop-box'); return b && b.style.display === 'block' ? [] : [$('btn-crop')]; },
           body: '<p><b>Crop &amp; Export Map</b> opens a crop box. Drag or resize it, pick a paper ratio and resolution, then press <b>Save High-Res Image</b>. The basemap and your lanes are drawn straight into the file.</p><p><b>Save</b> and <b>Load</b> keep your project as a file (' + mod + '+S, ' + mod + '+O).</p>',
           tryIt: 'Open the crop box (Cancel Cropping closes it)', done: () => { const b = $('crop-box'); return !!b && b.style.display === 'block'; } },
+        { el: () => $('cm-sec') || $('tr-share'), enter: () => { if (window.__openTr) window.__openTr('share'); }, title: 'Share online',
+          body: '<p>The <b>Share</b> menu also connects you to the community. <b>Sign in with GitHub</b>, then <b>Share sketch&hellip;</b> publishes your design with a title and description; you can update or delete it later.</p><p><b>Community&hellip;</b> opens a world map of everyone’s sketches: zoom in to see them drawn, open any one in your editor, vote, and leave comments. <b>My profile&hellip;</b> adds a short bio and your region.</p>' },
         { pos: 'bottom', title: 'Undo, redo and shortcuts',
           body: '<p><kbd>' + mod + '</kbd>+<kbd>Z</kbd> undoes and <kbd>' + mod + '</kbd>+<kbd>Y</kbd> redoes. <kbd>Esc</kbd> deselects and closes tools. A strip of key chips at the bottom left of the map shows what works right now; right-click it for <b>More actions</b>.</p><p>Reopen this tour any time from <b>? Help</b>.</p>' }
     ];
+    // ---- helpers for the later try-it steps ----
+    let joinBase = null, signBase = null, pathBase = null, pathPts = null, pathLy = null, signLy = null;
+    function joinSig() { const l = armOf('e'); return allLanes.filter(x => x.isCompleted).length + '|' + (l ? l.points.length + ':' + l.points.map(p => p.lat.toFixed(6) + p.lng.toFixed(6)).join() : ''); }
+    const signPiped = () => { let n = 0; allLanes.forEach(l => (l.feats || []).forEach(f => { if (f.t === 'sign' && f.post && f.post.on && f.post.type === 'pipe' && !(f._tutOld)) n++; })); return Math.max(0, n - (signBase && signBase.pipe || 0)); };
+    const signCount = () => { let n = 0; allLanes.forEach(l => (l.feats || []).forEach(f => { if (f.t === 'sign') n++; })); return n; };
+    function legFrame(k) {      // a leg's middle, the unit vectors along it and toward its north side, and its half width with roadside features
+        const l = armOf(k); if (!l) return null; const P = l.points, A = P[0], B = P[P.length - 1];
+        const ref = [A.lng, A.lat], b = xyOf([B.lng, B.lat], ref), len = Math.hypot(b[0], b[1]) || 1, u = [b[0] / len, b[1] / len]; let nv = [-u[1], u[0]]; if (nv[1] < 0) nv = [-nv[0], -nv[1]];
+        let half = 6; try { half = layout(l, l.totalLaneCount || 1).T / 2; ['l', 'r'].forEach(sd => { const w = l.sw && l.sw[sd]; if (w) half = Math.max(half, layout(l, l.totalLaneCount || 1).T / 2 + (w.buf || 0) + (w.w || 0) + (w.bike ? 3 : 0)); }); } catch (e) { /* default */ }
+        const at = (al, ac) => { const q = llOf([u[0] * al + nv[0] * ac, u[1] * al + nv[1] * ac], ref); return L.latLng(q[1], q[0]); };
+        const inner = map.distance(A, junction() || A) < map.distance(B, junction() || B) ? 0 : len;
+        return { l, len, half, at, inner, out: inner === 0 ? 1 : -1 };
+    }
+    function pathEnter() {
+        pathBase = new Set(allRails); pathPts = null;
+        const f = legFrame('e'); if (!f) return; const m = f.len / 2, d = f.half + 6;
+        pathPts = [f.at(m, d), f.at(m, -d)];
+        pathLy = L.layerGroup().addTo(hl || map); pathPts.forEach(p => L.marker(p, { interactive: false, keyboard: false, zIndexOffset: 4000, icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<div class="tut-ring"></div>' }) }).addTo(pathLy));
+    }
+    function pathRings() {      // the first point flashes until the path is started, then the second
+        if (!pathLy) return; const started = typeof railDraw !== 'undefined' && railDraw && railDraw.kind === 'walk' && railDraw.points && railDraw.points.length >= 1, ms = pathLy.getLayers();
+        ms.forEach((m, i) => { const e = m.getElement && m.getElement(); if (e) e.style.display = (i === 0) !== !!started ? '' : 'none'; });
+    }
+    function pathDone() {
+        const l = armOf('e'); if (!l || !pathBase) return false;
+        return allRails.some(r => !pathBase.has(r) && (r.kind || 'rail') === 'walk' && r.points && r.points.length >= 2 && (() => { try { return turf.lineIntersect(turf.lineString(r.points.map(p => [p.lng, p.lat])), turf.lineString(l.points.map(p => [p.lng, p.lat]))).features.length > 0; } catch (e) { return false; } })());
+    }
+    function signEnter() {
+        signBase = new Number(signCount()); signBase.pipe = 0; signBase.pipe = signPiped();      // (signs already on a round post before this step do not count)
+        const f = legFrame('e'); if (!f) return; const al = f.inner === 0 ? 8 : f.len - 8;
+        signLy = L.layerGroup().addTo(hl || map); L.marker(f.at(al, f.half - 1), { interactive: false, keyboard: false, zIndexOffset: 4000, icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<div class="tut-ring"></div>' }) }).addTo(signLy);
+    }
+    function signFlash() {
+        const open = $('feat-modal') && $('feat-modal').style.display === 'flex', aq = document.querySelector('#fm-body .wm-aq');
+        if (!open) return menuPath('ctx-sign');
+        if (!aq || !aq.offsetParent) { const t = document.querySelector('#fm-body .wm-tabs button[data-m="wm"]'); return t ? [t] : []; }
+        if (!aq.value.trim()) return [aq];
+        if (!document.querySelector('#fm-body .wm-aresults .sign-opt.on')) return [...document.querySelectorAll('#fm-body .wm-aresults .sign-opt')].slice(0, 6);
+        const pOn = document.querySelector('#fm-body .sp-on'), pT = document.querySelector('#fm-body .sp-type');      // then a round post under it
+        if (pOn && !pOn.checked) return [pOn.closest('label') || pOn];
+        if (pT && pT.value !== 'pipe') return [pT];
+        return [$('fm-ok')];
+    }
+    // while the path step is on, a click near one of its flashing points lands exactly on it
+    { const _rsT = railSnap; railSnap = function (ll) { const r = _rsT.apply(this, arguments); try { if (pathPts && steps[idx] && steps[idx].enter === pathEnter) { const cp = map.latLngToContainerPoint(ll); for (const p of pathPts) if (cp.distanceTo(map.latLngToContainerPoint(p)) < 16) return L.latLng(p.lat, p.lng); } } catch (e) { /* plain */ } return r; }; }
     let spot = null, card = null, idx = 0, timer = null, openedBm = false, userPos = null;
 
     function build() {
@@ -12492,6 +12628,12 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     const applyTr = el => { try { if (window.__trApply) window.__trApply(el); } catch (e) { /* ignore */ } };
     window.__tutStrings = () => steps.map(s => '<h4>' + s.title + '</h4>' + s.body + (s.tryIt ? '<div>Try it: ' + s.tryIt + '</div><div>\u2713 Done: ' + s.tryIt + '</div>' : ''))
         .concat(['<button>Back</button><button>Skip tour</button><button>Next</button><button>Skip step</button><button>Finish</button>']);
+    let prevStep = null;
+    function tidy(s) {      // what the step before left on the map: its rings, its own leave()
+        if (prevStep && prevStep !== s && prevStep.leave) { try { prevStep.leave(); } catch (e) { /* ignore */ } }
+        prevStep = s || null;
+        if (pathLy) { pathLy.remove(); pathLy = null; } if (signLy) { signLy.remove(); signLy = null; }
+    }
     function render() {
         const s = steps[idx], last = idx === steps.length - 1;
         card.innerHTML = '<span class="tut-count">' + (idx + 1) + ' / ' + steps.length + '</span><h4 title="Drag to move">' + s.title + '</h4>' + s.body
@@ -12503,6 +12645,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         { const t0 = $('tut-try'); if (t0) t0.dataset.h = tryHtml(s, false); }
         applyTr(card);
         clearGuide(); s._adv = false; document.querySelectorAll('.tut-pulse,.tut-hl').forEach(e => e.classList.remove('tut-pulse', 'tut-hl'));
+        tidy(s);
         if (openedBm && s.title !== 'Pick a basemap') { $('bm-details').open = false; openedBm = false; }      // put the basemap panel back as it was
         if (s.enter) { try { s.enter(); } catch (e) { /* ignore */ } }
         s._sig = null; if (s.gk && gPts !== undefined) { try { showGuide(s.gk, s.gt); s._sig = sig(); } catch (e) { /* ignore */ } }
@@ -12572,12 +12715,16 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
             let m = -1; steps.forEach(q => { if (q.st !== undefined && q.st <= stg() && q.st > m) m = q.st; });
             const t = steps.findIndex(q => q.st === m); if (t >= 0 && t !== idx) { idx = t; render(); return; }
         }
+        if (Date.now() > syncHold && s.st !== undefined && ixs() && stg() > s.st) {      // Next in the builder moves the tour on too (lane paths, tram paths ...)
+            const t = steps.findIndex((q, i) => i > idx && q.st !== undefined && q.st >= stg());
+            if (t > idx && steps[t].st === stg()) { idx = t; render(); return; }
+        }
         if (s.gk && gPts && guide) { const g = sig(); if (g !== s._sig) { s._sig = g; try { showGuide(s.gk, s.gt); } catch (e) { /* ignore */ } } }
         if (s.guide === 'draw' && guide && arms().length >= 3) clearGuide();
         if (s.guide === 'draw' && guide && gHandle && arms().length >= 1) { try { guide.removeLayer(gHandle); } catch (e) { /* ignore */ } gHandle = null; }      // the guide locks once a road exists
         const t = $('tut-try'); if (!t || !s.done) return;
         let ok = false; try { ok = !!s.done(); } catch (e) { ok = false; }
-        if (ok && s.auto && !s._adv) { s._adv = true; setTimeout(() => { if (steps[idx] === s && card) go(1); }, 800); }      // pressing Next in the builder moves the tour on too
+        if (ok && s.auto && !s._adv) { s._adv = true; setTimeout(() => { if (steps[idx] === s && card) go(1); }, s.delay || 800); }      // pressing Next in the builder moves the tour on too
         t.classList.toggle('ok', ok); const h = tryHtml(s, ok); if (t.dataset.h !== h) { t.dataset.h = h; t.innerHTML = h; applyTr(t); }
         if (s.req) {
             const nb = card.querySelector('.tut-next'), last = idx === steps.length - 1;
@@ -12606,7 +12753,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         idx = n; render();
     }
     function stop(mark) {
-        clearInterval(timer); timer = null; clearGuide(); window.__tutFl = [];
+        clearInterval(timer); timer = null; clearGuide(); window.__tutFl = []; tidy(null); window.__tutLtFlash = false;
         document.querySelectorAll('.tut-hl').forEach(e => e.classList.remove('tut-hl'));
         if (spot) spot.remove(); if (card) card.remove(); spot = card = null;
         base = null; gPts = null; userPos = null;
