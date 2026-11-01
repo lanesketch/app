@@ -13591,7 +13591,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
   const bbLL = it => { const b = bbox(it), p = 0.00004; return L.latLngBounds([b[0] - p, b[1] - p], [b[2] + p, b[3] + p]); };
   function openViewer() {
     if (!ready()) return;
-    if (ov) { ov.style.display = 'flex'; const w0 = isOgf() ? 'ogf' : 'earth'; if (w0 !== world) setWorld(w0, true); refresh(); return; }
+    if (ov) { ov.style.display = 'flex'; const w0 = isOgf() ? 'ogf' : 'earth'; if (w0 !== world) setWorld(w0, true); $('cv-w').style.display = isOgf() ? 'inline-flex' : 'none'; refresh(); return; }
     ov = document.createElement('div'); ov.id = 'cm-ov';
     ov.style.cssText = 'position:fixed;inset:0;z-index:4000;background:#111827;display:flex;flex-direction:column;font:14px system-ui,sans-serif;color:#f3f4f6';
     ov.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1f2937;border-bottom:1px solid #374151"><b style="font-size:16px">Community sketches</b><span id="cv-w" style="display:inline-flex;border:1px solid #4b5563;border-radius:5px;overflow:hidden"><button type="button" data-w="earth" style="border:0;padding:4px 10px;cursor:pointer;color:#fff">Earth</button><button type="button" data-w="ogf" style="border:0;padding:4px 10px;cursor:pointer;color:#fff">OpenGeofiction</button></span><span id="cv-n" style="opacity:.7"></span><span style="flex:1"></span><button id="cv-x" type="button" style="background:#374151;color:#fff;border:0;border-radius:4px;padding:5px 12px;cursor:pointer">Close</button></div>' +
@@ -13617,7 +13617,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     };
     pinLayer = L.layerGroup().addTo(vmap); rectLayer = L.layerGroup().addTo(vmap); geoLayer = L.layerGroup().addTo(vmap);
     ov.querySelectorAll('#cv-w button').forEach(b => b.onclick = () => setWorld(b.dataset.w));
-    world = isOgf() ? 'ogf' : 'earth'; setWorld(world, true);
+    world = isOgf() ? 'ogf' : 'earth'; setWorld(world, true); $('cv-w').style.display = isOgf() ? 'inline-flex' : 'none';      // the OpenGeofiction map only shows up while your own map is OpenGeofiction
     if (world === 'ogf') vmap.setView([20.7, 86.7], 4);
     $('cv-q').oninput = $('cv-s').onchange = list;
     vmap.on('moveend', () => { view(); if ($('cv-s').value === 'map') list(); });
