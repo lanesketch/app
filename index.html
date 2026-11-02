@@ -6222,13 +6222,9 @@
             let pushed = false, tm = null;
             let didPush = false;
             const push = () => { if (!pushed) { const n0 = historyStack.length; saveHistoryState(); pushed = true; didPush = historyStack.length > n0; } };
-            // the grass fill is a distance from the road's center, so it applies to both sides: the other side gets the same value
+            // the grass fill is a distance from the road's center, but it belongs only to the side it was added on (the other side is left alone)
             const oth = side === 'l' ? 'r' : 'l', othOrig = lane.sw && lane.sw[oth] ? JSON.parse(JSON.stringify(lane.sw[oth])) : null;
-            const mirrorGs = o => {
-                lane.sw = lane.sw || {}; const w = lane.sw[oth];
-                if (o && o.gs) { if (w) w.gs = Object.assign({}, o.gs); else lane.sw[oth] = { buf: 0, w: 0, bike: null, gs: Object.assign({}, o.gs) }; }
-                else if (w && w.gs) { delete w.gs; if (!(w.w > 0) && !w.bike && !w.pk && !w.sh && !(w.buf > 0.01) && !w.b2) delete lane.sw[oth]; }
-            };
+            const mirrorGs = o => { /* (no longer copied to the other side) */ };
             const live = () => { const o = gather(); if (!o) return; push(); lane.sw = lane.sw || {}; lane.sw[side] = o; mirrorGs(o); updateLaneGraphics(); };
             wrap.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(live, 140); });
             wrap.addEventListener('change', () => { clearTimeout(tm); tm = setTimeout(live, 30); });
@@ -14219,6 +14215,12 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     };
     const rgbToHex = t => { const m = String(t).match(/\d+/g); return m && m.length >= 3 ? rgbHex(m.slice(0, 3).map(Number)) : '#000000'; };
     if (g) { const d = dropper(v => { g.value = v; set('grass', v); }); if (d) g.closest('label').appendChild(d); }
+    if (g) {      // a visible Reset button for the grass color (right-clicking the square does the same)
+        const rs = document.createElement('button'); rs.type = 'button'; rs.textContent = 'Reset'; rs.title = 'Back to the default grass color';
+        rs.style.cssText = 'background:#374151;color:#fff;border:1px solid #4b5563;border-radius:4px;padding:1px 7px;font-size:11px;cursor:pointer;flex:none';
+        rs.onclick = e => { e.preventDefault(); e.stopPropagation(); set('grass', null); try { showToast('Grass color reset.'); } catch (er) { /* no toast */ } };
+        g.closest('label').appendChild(rs);
+    }
     // right-click a pavement swatch: a small box with its color square (click it for the full picker), an eyedropper and Reset
     let pop = null;
     const closePop = () => { if (pop) { pop.remove(); pop = null; } };
