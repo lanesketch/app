@@ -1935,12 +1935,12 @@
             return { seg: best.i, left: -cross * mp, dist: bd, beyond };
         }
         function tryStartEdgeDrag(lane, e) {
-            const h = laneHit(lane, e.latlng); if (!h) return false;
+            const h = laneHitS(lane, e.latlng); if (!h) return false;      // measured against the road as drawn (the smoothed curve), not the straight lines between its nodes: on a bend those are far from the road, so the edge was found only by luck
             const n = lane.totalLaneCount || 1, w = lane.widthMeters || defaultLaneWidthMeters;
-            const Tn = layout(lane, n).T, fromLeft = Tn / 2 - h.left, band = w * 0.35;
+            const Tn = layout(lane, n).T, fromLeft = Tn / 2 - h.left, band = Math.max(w * 0.35, Math.min(6 * metersPerPixel(), Tn * 0.4));      // (a few pixels wide even when zoomed out; the middle of the road still moves it)
             const side = fromLeft < band ? 'left' : (Tn - fromLeft) < band ? 'right' : null;
             if (!side) return false;
-            const p1 = lane.points[h.seg], p2 = lane.points[h.seg + 1];
+            const sp = lanePathCoords(lane), p1 = { lng: sp[h.seg][0], lat: sp[h.seg][1] }, p2 = { lng: sp[h.seg + 1][0], lat: sp[h.seg + 1][1] };      // (the direction of the drawn road right where it was grabbed)
             const bearing = turf.bearing(turf.point([p1.lng, p1.lat]), turf.point([p2.lng, p2.lat]));
             dragInitialPoints = serializeLanes(allLanes);
             isDraggingEdgeHandle = true; draggedLaneId = lane.id; draggedSide = side;
@@ -2757,12 +2757,21 @@
                             shiftSign * centerShiftDist
                         );
                         
-                        lane.points = shiftedCoords.map(c => L.latLng(c[1], c[0]));
+                        const dOff = shiftSign * centerShiftDist, sp0 = dragStartLanePoints, kx = Math.cos(sp0[0].lat * Math.PI / 180);
+                        lane.points = shiftedCoords.map((c, k) => {      // each bend keeps its own radius, so the curve is not broken into default-radius pieces: shifted toward the bend's center the arc tightens by the shift, away from it the arc widens by the same
+                            const q = L.latLng(c[1], c[0]), i = shiftedCoords.idx ? shiftedCoords.idx[k] : k, o = sp0[i];
+                            if (o && o.R > 0) {
+                                const a = sp0[i - 1], b = sp0[i + 1];
+                                if (a && b) { const cr = (o.lng - a.lng) * kx * (b.lat - o.lat) - (o.lat - a.lat) * (b.lng - o.lng) * kx; q.R = Math.max(0.5, o.R - dOff * (cr > 0 ? 1 : -1)); }      // (a left turn has its center on the left: a shift to the left shrinks it)
+                                else q.R = o.R;
+                            }
+                            return q;
+                        });
                         lane.totalLaneCount = newTotal;
                         lane.fwdCount = newTotal; // Simplify fwd allocation when dragging
                         lane.bwdCount = 0;
                     } else {
-                        lane.points = dragStartLanePoints.map(p => L.latLng(p.lat, p.lng));
+                        lane.points = dragStartLanePoints.map(p => { const q = L.latLng(p.lat, p.lng); if (p.R > 0) q.R = p.R; return q; });      // (back at the starting lane count: the points return with their bend radii, or the curve would flash wrong)
                         lane.totalLaneCount = dragStartTotalLanes;
                         lane.dirs = dragStartModel.dirs.slice(); lane.types = dragStartModel.types.slice(); lane.marks = Object.assign({}, dragStartModel.marks); lane.laneWidths = dragStartModel.widths ? dragStartModel.widths.slice() : null; if (dragStartModel.tram) lane.tram = dragStartModel.tram.slice();
                     }
@@ -3106,13 +3115,14 @@
         }
         // Drop offset points that run backwards against the centerline (the little loops that form on the inside of tight bends)
         function cleanOffset(base, off) {
-            if (off.length < 3) return off;
+            if (off.length < 3) { off.idx = off.map((_, i) => i); return off; }
             const ref = base[0], B = base.map(c => xyOf(c, ref)), O = off.map(c => xyOf(c, ref)), last = O.length - 1, keep = [0];
             const fwd = (i, j) => (B[i][0] - B[j][0]) * (O[i][0] - O[j][0]) + (B[i][1] - B[j][1]) * (O[i][1] - O[j][1]) > 0;
             for (let i = 1; i < last; i++) if (fwd(i, keep[keep.length - 1])) keep.push(i);
             while (keep.length > 1 && !fwd(last, keep[keep.length - 1])) keep.pop();
             keep.push(last);
-            return keep.map(i => off[i]);
+            const res = keep.map(i => off[i]); res.idx = keep;      // (idx: the original node each kept point came from)
+            return res;
         }
 
         function computeMultiLanePolygon(coords, singleLaneWidthMeters, totalLanes, lane) {
