@@ -447,6 +447,7 @@
                         <label class="flex items-center gap-1"><input type="checkbox" id="tog-arrows" checked> Direction arrows</label>
                         <label class="flex items-center gap-1" title="Length labels on finished segments"><input type="checkbox" id="tog-len" checked> Length labels</label>
                         <label class="flex items-center gap-1" title="Show or hide roadside signs on the map"><input type="checkbox" id="tog-signs" checked> Show signs</label>
+                        <label class="flex items-center gap-1" title="Click the square to pick the grass color (right-click it to go back to the default)"><input type="color" id="grass-color" value="#5f8f55" style="width:18px;height:18px;padding:0;border:1px solid #6b7280;border-radius:3px;background:none;cursor:pointer"> Grass color</label>
                     </div>
                     <div class="sb-label" style="margin-top:6px"><span>Sign size:</span><span id="sign-scale-val">200%</span></div>
                     <input type="range" id="sign-scale" min="50" max="400" step="25" value="200" class="cursor-pointer w-full accent-blue-600" autocomplete="off" title="How large roadside signs are drawn (100% is their real size)">
@@ -1549,7 +1550,7 @@
             return best ? L.latLng(q.lat + best.a, q.lng + best.b) : q;
         }
         // the first leg of a lane added at a road end runs parallel to the road there (Ctrl: free), so the new lane does not twist away from it
-        const tanProj = (lane, pt) => { try { if (!lane || typeof lane.tanOut !== 'number' || lane.points.length !== 1 || (window.DM && window.DM.ctrl)) return pt; const P = lane.points[0], k = Math.cos(P.lat * Math.PI / 180), b = lane.tanOut * Math.PI / 180, u = [Math.sin(b), Math.cos(b)], d = [(pt.lng - P.lng) * k * 111320, (pt.lat - P.lat) * 110574], s0 = Math.max(1, d[0] * u[0] + d[1] * u[1]); return L.latLng(P.lat + u[1] * s0 / 110574, P.lng + u[0] * s0 / (111320 * k)); } catch (er) { return pt; } };
+        const tanProj = (lane, pt) => { try { if (!lane || typeof lane.tanOut !== 'number' || lane.points.length !== 1 || !window.DM || window.DM.mode !== 'ortho' || window.DM.ctrl) return pt;      /* a lane extended with the plus starts straight on from the road only in Orthogonal mode; Freehand goes wherever you click */ const P = lane.points[0], k = Math.cos(P.lat * Math.PI / 180), b = lane.tanOut * Math.PI / 180, u = [Math.sin(b), Math.cos(b)], d = [(pt.lng - P.lng) * k * 111320, (pt.lat - P.lat) * 110574], s0 = Math.max(1, d[0] * u[0] + d[1] * u[1]); return L.latLng(P.lat + u[1] * s0 / 110574, P.lng + u[0] * s0 / (111320 * k)); } catch (er) { return pt; } };
         const extPts = lane => extendingEndpointIndex === 0 ? lane.points.slice().reverse() : lane.points;      // the way as seen from the end being extended (its last point is the one the new part starts from), for the drawing modes
         function snapExt(lane, latlng) {
             const ref = extendingEndpointIndex === 0 ? lane.points[0] : lane.points[lane.points.length - 1];
@@ -2820,7 +2821,7 @@
                         });
                     }));
                     if (best) { dLat = best.a; dLng = best.b; }
-                    shapeDragOrig.forEach(o => { o.l.points = o.pts.map(p => L.latLng(p.lat + dLat, p.lng + dLng)); });
+                    shapeDragOrig.forEach(o => { o.l.points = o.pts.map(p => { const q = L.latLng(p.lat + dLat, p.lng + dLng); if (p.R > 0) q.R = p.R; return q; }); });      // (bend radii move with the road)
                     updateLaneGraphics();
                 }
                 return;
@@ -3390,7 +3391,9 @@
                                         const R0 = pt.R > 0 ? pt.R : Math.max(45, layout(lane, lane.totalLaneCount || 1).T * 8), dEff = Math.min(R0 * Math.tan(th / 2), (i === 1 ? 0.9 : 0.5) * l1, (i === lane.points.length - 2 ? 0.9 : 0.5) * l2), ef = lane._effR && lane._effR[i], Rf = ef > 0 ? ef : dEff / Math.tan(th / 2), lim = !!(lane._limR && lane._limR[i]), E = Rf * (1 / Math.cos(th / 2) - 1);
                                         const bx = u2[0] - u1[0], by = u2[1] - u1[1], bl = Math.hypot(bx, by) || 1, bis = [bx / bl, by / bl], hp = llOf([bis[0] * E, bis[1] * E], rf);
                                         const rTxt = 'R ' + (isMetric ? Rf.toFixed(Rf < 100 ? 1 : 0) + ' m' : (Rf * 3.28084).toFixed(Rf * 3.28084 < 100 ? 1 : 0) + ' ft');
-                                        const rh = L.marker([hp[1], hp[0]], { icon: L.divIcon({ className: 'radius-wrap', html: '<input type="text" class="radius-lbl' + (pt.R > 0 ? ' set' : '') + (lim ? ' lim' : '') + '" style="left:-38px;top:-9px" value="' + rTxt + '" data-orig="' + rTxt + '" title="' + (lim ? 'The nodes next to this bend are too close for the radius you typed. Move them apart for a larger radius.' : 'Click, type a radius, then Enter (empty: automatic)') + '">', iconSize: [0, 0] }), interactive: true, zIndexOffset: 9000 }).addTo(laneGroup);
+                                        let cl = L.latLng(hp[1], hp[0]);      // the callout sits at the middle of the curve, but never on top of the node: pushed clear of it along the bend's bisector
+                                        try { const np = map.latLngToContainerPoint(pt), cp = map.latLngToContainerPoint(cl); let dx = cp.x - np.x, dy = cp.y - np.y, dl = Math.hypot(dx, dy); if (dl < 1) { dx = bis[0]; dy = -bis[1]; dl = Math.hypot(dx, dy) || 1; } const need = 18 + Math.abs(dx / dl) * 30; if (Math.hypot(cp.x - np.x, cp.y - np.y) < need) cl = map.containerPointToLatLng([np.x + dx / dl * need, np.y + dy / dl * need]); } catch (e) { /* keep the curve's middle */ }
+                                        const rh = L.marker(cl, { icon: L.divIcon({ className: 'radius-wrap', html: '<input type="text" class="radius-lbl' + (pt.R > 0 ? ' set' : '') + (lim ? ' lim' : '') + '" style="left:-38px;top:-9px" value="' + rTxt + '" data-orig="' + rTxt + '" title="' + (lim ? 'The nodes next to this bend are too close for the radius you typed. Move them apart for a larger radius.' : 'Click, type a radius, then Enter (empty: automatic)') + '">', iconSize: [0, 0] }), interactive: true, zIndexOffset: 1000 }).addTo(laneGroup);      // (below the nodes, which stay on top and draggable)
                                         wireRadLbl(rh, v => { saveHistoryState(); if (v > 0) lane.points[i].R = Math.max(1, isMetric ? v : v / 3.28084); else delete lane.points[i].R; updateLaneGraphics(); updateUndoRedoUI(); });
                                     }
                                 }
@@ -5628,7 +5631,7 @@
             if (area2 < 0.05 * c) return;      // straight
             const R = am * mb * c / (2 * area2); if (!(R > 0) || R > 5000) return;
             const sd = cross > 0 ? 1 : -1, txt = 'R ' + (isMetric ? R.toFixed(R < 100 ? 1 : 0) + ' m' : (R * 3.28084).toFixed(R * 3.28084 < 100 ? 1 : 0) + ' ft');
-            const lm = L.marker(mp, { icon: L.divIcon({ className: 'radius-wrap', html: '<input type="text" class="radius-lbl" style="left:10px;top:-24px" value="' + txt + '" data-orig="' + txt + '" title="Type a radius, then Enter">', iconSize: [0, 0] }), interactive: true, zIndexOffset: 1600 }).addTo(laneGroup);
+            const lm = L.marker(mp, { icon: L.divIcon({ className: 'radius-wrap', html: '<input type="text" class="radius-lbl" style="left:10px;top:-24px" value="' + txt + '" data-orig="' + txt + '" title="Type a radius, then Enter">', iconSize: [0, 0] }), interactive: true, zIndexOffset: 900 }).addTo(laneGroup);
             wireRadLbl(lm, v => {
                 if (!(v > 0)) return; v = isMetric ? v : v / 3.28084; v = Math.max(v, c / 2 + 0.01);
                 const al = Math.asin(Math.min(1, c / (2 * v))), hl = 4 / 3 * Math.tan(al / 2) * v, u = [b[0] / c, b[1] / c], rot = (w, th) => [w[0] * Math.cos(th) - w[1] * Math.sin(th), w[0] * Math.sin(th) + w[1] * Math.cos(th)], tA = rot(u, sd * al), tB = rot(u, -sd * al);
@@ -6209,17 +6212,24 @@
             let pushed = false, tm = null;
             let didPush = false;
             const push = () => { if (!pushed) { const n0 = historyStack.length; saveHistoryState(); pushed = true; didPush = historyStack.length > n0; } };
-            const live = () => { const o = gather(); if (!o) return; push(); lane.sw = lane.sw || {}; lane.sw[side] = o; updateLaneGraphics(); };
+            // the grass fill is a distance from the road's center, so it applies to both sides: the other side gets the same value
+            const oth = side === 'l' ? 'r' : 'l', othOrig = lane.sw && lane.sw[oth] ? JSON.parse(JSON.stringify(lane.sw[oth])) : null;
+            const mirrorGs = o => {
+                lane.sw = lane.sw || {}; const w = lane.sw[oth];
+                if (o && o.gs) { if (w) w.gs = Object.assign({}, o.gs); else lane.sw[oth] = { buf: 0, w: 0, bike: null, gs: Object.assign({}, o.gs) }; }
+                else if (w && w.gs) { delete w.gs; if (!(w.w > 0) && !w.bike && !w.pk && !w.sh && !(w.buf > 0.01) && !w.b2) delete lane.sw[oth]; }
+            };
+            const live = () => { const o = gather(); if (!o) return; push(); lane.sw = lane.sw || {}; lane.sw[side] = o; mirrorGs(o); updateLaneGraphics(); };
             wrap.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(live, 140); });
             wrap.addEventListener('change', () => { clearTimeout(tm); tm = setTimeout(live, 30); });
             openModal(ex ? 'Edit roadside features' : 'Add roadside features', wrap, 'Save', () => {
                 clearTimeout(tm);
                 const o = gather(); if (!o) return false;
-                push(); lane.sw = lane.sw || {}; lane.sw[side] = o;
+                push(); lane.sw = lane.sw || {}; lane.sw[side] = o; mirrorGs(o);
                 swLast = JSON.parse(JSON.stringify(o)); try { localStorage.setItem('laneToolSwLast', JSON.stringify(swLast)); } catch (e) { /* storage blocked */ }
                 updateLaneGraphics(); updateUndoRedoUI(); setTimeout(() => { try { window.ixAskRedraw && window.ixAskRedraw(lane, true); } catch (e) { /* none */ } }, 120);
             }, { float: true, wide: () => pkT.value === 'ang', presets: { get: () => gather(), set: fill },
-                onCancel: () => { clearTimeout(tm); if (!pushed) return; if (orig) { lane.sw = lane.sw || {}; lane.sw[side] = orig; } else if (lane.sw) { delete lane.sw[side]; if (!Object.keys(lane.sw).length && !hadSw) lane.sw = undefined; } if (didPush) { try { historyStack.pop(); } catch (e) { /* none */ } } updateLaneGraphics(); updateUndoRedoUI(); },
+                onCancel: () => { clearTimeout(tm); if (!pushed) return; if (orig) { lane.sw = lane.sw || {}; lane.sw[side] = orig; } else if (lane.sw) { delete lane.sw[side]; } if (lane.sw) { if (othOrig) lane.sw[oth] = othOrig; else delete lane.sw[oth]; if (!Object.keys(lane.sw).length && !hadSw) lane.sw = undefined; } if (didPush) { try { historyStack.pop(); } catch (e) { /* none */ } } updateLaneGraphics(); updateUndoRedoUI(); },
                 onRemove: ex ? () => { clearTimeout(tm); push(); delete lane.sw[side]; if (!Object.keys(lane.sw).length) lane.sw = undefined; updateLaneGraphics(); updateUndoRedoUI(); } : null });
         }
 
@@ -13397,14 +13407,33 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         const c = map.getCenter(), data = { app: 'lane-tool', version: 1, selection: true, saved: new Date().toISOString(), view: { lat: c.lat, lng: c.lng, zoom: map.getZoom() }, presets: presetStore, lanes: JSON.parse(JSON.stringify(getCleanLanesOnly(sel))).concat(ixs, rr) };
         then(data, sel.length + ' segment(s)' + (rails.length ? ', ' + rails.length + ' path(s)' : '') + (ixs.length ? ', ' + ixs.length + ' intersection(s)' : '')); return true;
     }
-    let clipTxt = null;
-    window.lpHasClip = () => !!clipTxt;
+    // the copy goes three places: this tab, the browser's storage for this site (so another lanesketch tab or window can paste it),
+    // and the system clipboard (so it pastes into lanesketch opened anywhere else, even from a different address)
+    let clipTxt = null, clipAt = 0;
+    const CLIPK = 'lanesketch.clip';
+    const isSketch = t => { try { const d = JSON.parse(t); return !!d && d.app === 'lane-tool' && Array.isArray(d.lanes); } catch (e) { return false; } };
+    const stored = () => { try { const o = JSON.parse(localStorage.getItem(CLIPK) || 'null'); return o && o.t && isSketch(o.t) ? o : null; } catch (e) { return null; } };
+    const latest = () => { const o = stored(); return o && o.at > clipAt ? o.t : clipTxt; };      // a copy made in another tab after this one's wins
+    window.lpHasClip = () => !!latest();
     window.lpCopySel = cut => {
-        const ok = selData('', (data, msg) => { clipTxt = JSON.stringify(data); showToast((cut ? 'Cut ' : 'Copied ') + msg + '. Ctrl+V to paste.'); });
+        const ok = selData('', (data, msg) => {
+            clipTxt = JSON.stringify(data); clipAt = Date.now();
+            try { localStorage.setItem(CLIPK, JSON.stringify({ at: clipAt, t: clipTxt })); } catch (e) { /* too large or blocked: this tab and the clipboard still have it */ }
+            try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(clipTxt).catch(() => { }); } catch (e) { /* no clipboard access */ }
+            showToast((cut ? 'Cut ' : 'Copied ') + msg + '. Ctrl+V to paste (here or in another lanesketch window).');
+        });
         if (ok && cut) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
         return ok;
     };
-    window.lpPasteClip = () => { if (!clipTxt) return false; startPlacement(clipTxt, 'copied selection'); return true; };
+    window.lpPasteClip = () => { const t = latest(); if (!t) return false; startPlacement(t, 'copied selection'); return true; };
+    // nothing copied on this site (e.g. lanesketch opened from another address): Ctrl+V falls through to a normal paste, which is read here
+    document.addEventListener('paste', e => {
+        try {
+            const tg = e.target && e.target.tagName; if (tg === 'INPUT' || tg === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+            const t = e.clipboardData && e.clipboardData.getData('text/plain'); if (!t || !isSketch(t)) return;
+            e.preventDefault(); startPlacement(t, 'pasted sketch');
+        } catch (er) { /* not a sketch */ }
+    });
 
     // ---- Load in current sketch: a transparent copy follows the pointer; one click places it ----
     let placing = null;
@@ -13428,14 +13457,21 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         const cEl = map.getContainer(), r0 = cEl.getBoundingClientRect(); placing.mx = r0.left + r0.width / 2; placing.my = r0.top + r0.height / 2;
         if (typeof lastMouseLL !== 'undefined' && lastMouseLL) { const q = map.latLngToContainerPoint(lastMouseLL); placing.mx = r0.left + q.x; placing.my = r0.top + q.y; }
         const cv2 = document.createElement('canvas'); cv2.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;z-index:3000;opacity:.6;will-change:transform'; document.body.appendChild(cv2); placing.cv2 = cv2;
-        const hint = mk('div', '', 'Placing “' + placing.name + '” — click to place it, Esc to cancel'); hint.id = 'lp-hint'; document.body.appendChild(hint); placing.hint = hint;
+        const hint = mk('div', '', 'Placing “' + placing.name + '” — click to place it, R to rotate, Esc to cancel'); hint.id = 'lp-hint'; document.body.appendChild(hint); placing.hint = hint;
         cEl.style.cursor = 'crosshair';
         renderGhost(); moveGhost();
         placing.h = {
             mv: e => { placing.mx = e.clientX; placing.my = e.clientY; if (!placing.raf) placing.raf = requestAnimationFrame(() => { if (placing) { placing.raf = 0; moveGhost(); } }); },
             dn: e => { placing.down = [e.clientX, e.clientY]; },
             ck: e => { if (!placing) return; e.stopPropagation(); e.preventDefault(); if (placing.down && Math.hypot(e.clientX - placing.down[0], e.clientY - placing.down[1]) > 5) return; const ll = map.mouseEventToLatLng(e); finishPlacement(ll); },
-            key: e => { if (e.key === 'Escape' && placing) { e.stopImmediatePropagation(); e.preventDefault(); cancelPlacement(); showToast('Placement canceled.'); } },
+            key: e => {
+                if (e.key === 'Escape' && placing) { e.stopImmediatePropagation(); e.preventDefault(); cancelPlacement(); showToast('Placement canceled.'); return; }
+                if (placing && (e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey) {      // R turns what is being placed 15 degrees clockwise (Shift+R the other way)
+                    const tg = e.target && e.target.tagName; if (tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT') return;
+                    e.stopImmediatePropagation(); e.preventDefault(); placing.rot = (((placing.rot || 0) + (e.shiftKey ? -15 : 15)) % 360 + 360) % 360; moveGhost();
+                    if (placing.hint) placing.hint.textContent = 'Placing “' + placing.name + '”' + (placing.rot ? ' (turned ' + placing.rot + '°)' : '') + ' — click to place it, R to rotate, Esc to cancel';
+                }
+            },
             zm: () => { renderGhost(); moveGhost(); }
         };
         cEl.addEventListener('mousemove', placing.h.mv); cEl.addEventListener('mousedown', placing.h.dn, true); cEl.addEventListener('click', placing.h.ck, true);
@@ -13453,7 +13489,28 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         lanes.forEach(l => { if (l.points.length < 2) return; const w = Math.max(3, (l.widthMeters || 3.5) * (l.totalLaneCount || 1) / mpp); path(l.points); g.strokeStyle = '#4b5563'; g.lineWidth = w; g.stroke(); });
         P.railsRaw.forEach(r => { if (r.points.length < 2) return; path(r.points); g.strokeStyle = r.kind === 'bike' ? '#22c55e' : (r.kind === 'walk' ? '#d6d3d1' : '#a8a29e'); g.lineWidth = Math.max(2, (r.w || (r.kind === 'rail' ? 3 : 1.8)) / mpp); g.stroke(); });
     }
-    function moveGhost() { const P = placing; if (!P) return; P.cv2.style.transform = 'translate(' + Math.round(P.mx - P.W / 2) + 'px,' + Math.round(P.my - P.H / 2) + 'px)'; }
+    function moveGhost() { const P = placing; if (!P) return; P.cv2.style.transform = 'translate(' + Math.round(P.mx - P.W / 2) + 'px,' + Math.round(P.my - P.H / 2) + 'px)' + (P.rot ? ' rotate(' + P.rot + 'deg)' : ''); }
+    // turning the pasted sketch about its own center: every point, curve handle and direction inside it (clockwise on screen = clockwise from north)
+    function rotGeo(o, ref, th, key) {
+        if (!th) return o;
+        const k = 111320 * Math.cos(ref.lat * Math.PI / 180), ky = 110574, cs = Math.cos(th), sn = Math.sin(th);
+        const turn = (lat, lng) => { const x = (lng - ref.lng) * k, y = (lat - ref.lat) * ky, x2 = x * cs + y * sn, y2 = -x * sn + y * cs; return [ref.lat + y2 / ky, ref.lng + x2 / k]; };
+        const near = (x, y) => Math.abs(x - ref.lat) < 0.6 && Math.abs(y - ref.lng) < 0.6, nearR = (x, y) => Math.abs(x - ref.lng) < 0.6 && Math.abs(y - ref.lat) < 0.6;
+        if (Array.isArray(o)) {
+            if (o.length === 2 && typeof o[0] === 'number' && typeof o[1] === 'number') {
+                if (near(o[0], o[1])) { const q = turn(o[0], o[1]); o[0] = q[0]; o[1] = q[1]; return o; }
+                if (nearR(o[0], o[1])) { const q = turn(o[1], o[0]); o[0] = q[1]; o[1] = q[0]; return o; }
+                if (key === 'h' && Math.abs(o[0]) <= 1.001 && Math.abs(o[1]) <= 1.001) { const x = o[0], y = o[1]; o[0] = x * cs + y * sn; o[1] = -x * sn + y * cs; }      // a unit direction (east, north)
+                return o;
+            }
+            o.forEach((v, i) => { o[i] = rotGeo(v, ref, th, key); }); return o;
+        }
+        if (o && typeof o === 'object') {
+            if (typeof o.lat === 'number' && typeof o.lng === 'number') { const q = turn(o.lat, o.lng); o.lat = q[0]; o.lng = q[1]; }
+            Object.keys(o).forEach(kk => { if (kk !== 'lat' && kk !== 'lng') o[kk] = rotGeo(o[kk], ref, th, kk); });
+        }
+        return o;
+    }
     function cancelPlacement() {
         const P = placing; if (!P) return; placing = null;
         const cEl = map.getContainer(); cEl.removeEventListener('mousemove', P.h.mv); cEl.removeEventListener('mousedown', P.h.dn, true); cEl.removeEventListener('click', P.h.ck, true);
@@ -13477,6 +13534,8 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         const P = placing; if (!P) return; cancelPlacement();
         try {
             const dLat = ll.lat - P.c.lat, dLng = ll.lng - P.c.lng; saveHistoryState();
+            const th = (P.rot || 0) * Math.PI / 180;
+            if (th) { P.lanesRaw = rotGeo(JSON.parse(JSON.stringify(P.lanesRaw)), P.c, th); P.railsRaw = rotGeo(JSON.parse(JSON.stringify(P.railsRaw)), P.c, th); P.ixRaw = rotGeo(JSON.parse(JSON.stringify(P.ixRaw)), P.c, th); if (P.cv) P.cv = rotGeo(JSON.parse(JSON.stringify(P.cv)), P.c, th); }
             const idMap = {}, now = Date.now();
             const lanes = deserializeLanesOnly(JSON.parse(JSON.stringify(P.lanesRaw)));
             lanes.forEach((l, i) => { idMap[String(l.id)] = now + Math.random() + i; });
@@ -13605,7 +13664,7 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
         const fm = document.getElementById('feat-modal');
         if (fm && fm.style.display === 'flex') return [[null, 'Enter', 'Save'], [null, 'Esc', 'Cancel']];
         if (B.classList.contains('cropping')) return [[null, 'Esc', 'Cancel crop']];
-        if (window.lpIsPlacing && window.lpIsPlacing()) return [['Escape', 'Esc', 'Cancel'], [null, 'click', 'Place here']];
+        if (window.lpIsPlacing && window.lpIsPlacing()) return [['Escape', 'Esc', 'Cancel'], [null, 'click', 'Place here'], ['r', 'R', 'Rotate'], [null, 'Shift+R', 'Rotate back']];
         if (window.__measureOn && window.__measureOn()) return [['Escape', 'Esc', 'Close measure'], [null, 'click', 'Add point'], [null, 'dbl', 'Finish'], [null, 'RC', 'Finish / close']];
         if (typeof railToolOn !== 'undefined' && railToolOn) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']].concat(ortho);
         if (typeof isDrawing !== 'undefined' && isDrawing) return [['Escape', 'Esc', 'Close tool'], ['RC', '', 'Close tool'], ['Delete', 'Del', 'Undo last point'], [null, 'dbl', 'Finish']].concat(ortho);
@@ -14065,6 +14124,113 @@ window.ixLoad=arr=>{allIx=(arr||[]).map(x=>({id:x.id,lvl:x.lvl||0,pave:x.pave||n
     if (saved !== null && sig() === saved) return;      // nothing changed since the last save or load
     e.preventDefault(); e.returnValue = 'Your progress may not be saved.'; return e.returnValue;
   });
+})();
+</script>
+<script>
+// ---- material colors: grass (Display settings) and the pavement swatches (right-click one) can be recolored; the choice is kept in this browser ----
+(function paveColors() {
+    const DEF = { asphalt: '#374151', concrete: '#bdb8ad', red: '#cf7468', green: '#6f9573', grass: '#5f8f55' }, KEY = 'lanesketch.colors';
+    // concrete is two shades (the darker #aeaa9e and the lighter #cbc6bb): the picker holds their middle color, and a picked color keeps the same step darker / lighter for each
+    const C_DARK = '#aeaa9e', C_LIGHT = '#cbc6bb', hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), rgbHex = a => '#' + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+    const CD = hexRGB(C_DARK), CL = hexRGB(C_LIGHT), CAVG = CD.map((v, i) => (v + CL[i]) / 2), CSTEP = CD.map((v, i) => CAVG[i] - v);
+    const shade = (h, sg) => rgbHex(hexRGB(h).map((v, i) => v + sg * CSTEP[i]));
+    let OV = {}; try { OV = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { OV = {}; }
+    let FILL = {}, STROKE = {};
+    const rebuild = () => {
+        FILL = {}; STROKE = {};
+        Object.keys(OV).forEach(k => { const d = DEF[k], v = OV[k]; if (!d || !/^#[0-9a-f]{6}$/i.test(v) || v.toLowerCase() === d) return;
+            if (k === 'concrete') { FILL[C_DARK] = shade(v, -1); FILL[C_LIGHT] = shade(v, 1); return; }      // (curb lines share the darker concrete color: as lines they keep theirs)
+            FILL[d] = v; STROKE[d] = v; });
+        document.querySelectorAll('#pave-row .swatch').forEach(b => { const k = b.dataset.k; if (DEF[k]) b.style.background = OV[k] || DEF[k]; });
+        const g = document.getElementById('grass-color'); if (g) g.value = OV.grass || DEF.grass;
+    };
+    // drawn shapes get their color swapped as they are styled (not in plan view, which has its own black-and-white styling keyed to the original colors)
+    const up = L.SVG.prototype._updateStyle;
+    L.SVG.prototype._updateStyle = function (layer) {
+        const r = up.apply(this, arguments);
+        try { const p = layer._path; if (p && !document.body.classList.contains('plan-view')) { const f = (p.getAttribute('fill') || '').toLowerCase(), s = (p.getAttribute('stroke') || '').toLowerCase(); if (FILL[f]) { p.setAttribute('fill', FILL[f]); if (s === f) p.setAttribute('stroke', FILL[f]); } else if (STROKE[s]) p.setAttribute('stroke', STROKE[s]); } } catch (e) { /* plain */ }      // (a filled shape outlined in its own color keeps the outline matching)
+        return r;
+    };
+    let raf = 0;
+    const set = (k, v) => { if (v && v.toLowerCase() !== DEF[k]) OV[k] = v; else delete OV[k]; try { localStorage.setItem(KEY, JSON.stringify(OV)); } catch (e) { /* not kept */ } rebuild(); if (!raf) raf = requestAnimationFrame(() => { raf = 0; try { updateLaneGraphics(); } catch (e) { /* later */ } }); };
+    const g = document.getElementById('grass-color');
+    if (g) { g.addEventListener('input', () => set('grass', g.value)); g.addEventListener('contextmenu', e => { e.preventDefault(); set('grass', null); showToast('Grass color reset.'); }); }
+    // an eyedropper (pick a color from anywhere on the screen): the browser's EyeDropper, where it has one (Chrome / Edge on a computer)
+    const dropper = onPick => {
+        const d = document.createElement('button'); d.type = 'button'; d.title = 'Pick a color from the screen'; d.setAttribute('aria-label', 'Eyedropper');
+        // the Material "colorize" eyedropper icon
+        d.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true" style="display:block"><path d="M20.71 5.63l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
+        d.style.cssText = 'width:22px;height:22px;padding:0;border:1px solid #6b7280;border-radius:3px;background:#1f2937;color:#fff;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle';
+        d.onclick = e => {
+            e.preventDefault(); e.stopPropagation();
+            if (window.EyeDropper) { try { new EyeDropper().open().then(r => { if (r && r.sRGBHex) onPick(r.sRGBHex.length === 7 ? r.sRGBHex : rgbToHex(r.sRGBHex)); }).catch(() => { /* canceled */ }); } catch (er) { /* not allowed */ } return; }
+            pickFromShape(onPick);      // (no browser EyeDropper, as in Firefox / Safari: click a drawn shape instead)
+        };
+        return d;
+    };
+    // fallback eyedropper (browsers without EyeDropper): click anywhere on the map - a drawn shape, a line or the basemap - and take its color; Esc cancels
+    const DROP_CUR = 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><path d="M20.71 5.63l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z" fill="#111" stroke="#fff" stroke-width="1.2" paint-order="stroke"/></svg>') + '") 3 25, crosshair';
+    const pickFromShape = onPick => {
+        // while picking: the cursor is the eyedropper, and the basemap tiles and the (normally click-through) drawn shapes can be hit-tested
+        const st = document.createElement('style');
+        st.textContent = ':root:root:root:root, :root:root:root:root body, :root:root:root:root body * { cursor: ' + DROP_CUR + ' !important; } .leaflet-tile, .leaflet-layer img, .leaflet-pane > svg, .leaflet-pane > svg * { pointer-events: auto !important; }';
+        document.head.appendChild(st);
+        try { showToast('Click anywhere on the map to pick its color (Esc to cancel).'); } catch (er) { /* no toast */ }
+        const EV = ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'dblclick', 'contextmenu'];
+        const stop = e => { e.stopPropagation(); if (!/^touch/.test(e.type)) e.preventDefault(); };      // (a touch event left alone, or the tap would not turn into a click)
+        const done = () => { st.remove(); EV.forEach(t => window.removeEventListener(t, stop, true)); window.removeEventListener('click', onClick, true); window.removeEventListener('keydown', onKey, true); };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(); } };
+        const tileColor = async (img, x, y) => {      // a basemap tile: the pixel under the cursor (read straight from the tile, or fetched again with CORS if the canvas is locked)
+            const r = img.getBoundingClientRect(); if (!(r.width > 0) || !img.naturalWidth) return null;
+            const W = img.naturalWidth, H = img.naturalHeight, px = Math.max(0, Math.min(W - 1, Math.floor((x - r.left) * W / r.width))), py = Math.max(0, Math.min(H - 1, Math.floor((y - r.top) * H / r.height)));
+            const read = src => { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(src, 0, 0); return cx.getImageData(px, py, 1, 1).data; };
+            let d; try { d = read(img); } catch (er) { const res = await fetch(img.currentSrc || img.src, { mode: 'cors' }); d = read(await createImageBitmap(await res.blob())); }
+            return d[3] < 20 ? null : rgbHex([d[0], d[1], d[2]]);      // (a see-through pixel, such as a label layer's, falls through to the layer below)
+        };
+        const GEO = /^(path|rect|circle|ellipse|polygon|polyline|line)$/i;
+        const onClick = async e => {
+            stop(e); const hits = document.elementsFromPoint(e.clientX, e.clientY); done();      // (hit-test first: the click-through styles go away with done)
+            let hex = null, tileErr = false;
+            for (const el of hits) {
+                const cs = getComputedStyle(el);
+                if (el instanceof SVGElement) {
+                    if (!GEO.test(el.tagName)) continue;
+                    if (cs.fill && cs.fill !== 'none' && !/url\(/.test(cs.fill) && +cs.fillOpacity > 0.3) { hex = rgbToHex(cs.fill); break; }
+                    if (cs.stroke && cs.stroke !== 'none' && !/url\(/.test(cs.stroke) && +cs.strokeOpacity > 0.3) { hex = rgbToHex(cs.stroke); break; }
+                    continue;
+                }
+                if (el.tagName === 'IMG' && el.classList.contains('leaflet-tile')) { try { hex = await tileColor(el, e.clientX, e.clientY); } catch (er) { tileErr = true; } if (hex) break; continue; }
+                const bg = cs.backgroundColor; if (bg && !/rgba\(.*,\s*0\)$/.test(bg) && bg !== 'transparent' && el !== document.body && el !== document.documentElement && !el.classList.contains('leaflet-container')) { hex = rgbToHex(bg); break; }
+            }
+            if (hex) onPick(hex); else { try { showToast(tileErr ? 'This basemap does not allow reading its colors in this browser.' : 'No color found there.'); } catch (er) { /* no toast */ } }
+        };
+        EV.forEach(t => window.addEventListener(t, stop, true));
+        window.addEventListener('click', onClick, true); window.addEventListener('keydown', onKey, true);
+    };
+    const rgbToHex = t => { const m = String(t).match(/\d+/g); return m && m.length >= 3 ? rgbHex(m.slice(0, 3).map(Number)) : '#000000'; };
+    if (g) { const d = dropper(v => { g.value = v; set('grass', v); }); if (d) g.closest('label').appendChild(d); }
+    // right-click a pavement swatch: a small box with its color square (click it for the full picker), an eyedropper and Reset
+    let pop = null;
+    const closePop = () => { if (pop) { pop.remove(); pop = null; } };
+    document.addEventListener('mousedown', e => { if (pop && !pop.contains(e.target)) closePop(); }, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+    document.getElementById('pave-row').addEventListener('contextmenu', e => {
+        const b = e.target.closest && e.target.closest('.swatch'); if (!b || !DEF[b.dataset.k]) return; e.preventDefault(); const k = b.dataset.k;
+        if (e.altKey) { set(k, null); showToast((PAVE[k] ? PAVE[k].n : k) + ' color reset.'); return; }
+        closePop(); const r = b.getBoundingClientRect();
+        pop = document.createElement('div'); pop.style.cssText = 'position:fixed;z-index:6000;display:flex;align-items:center;gap:6px;background:#111827;color:#f3f4f6;border:1px solid #4b5563;border-radius:6px;padding:6px 8px;font:12px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.45)';
+        pop.style.left = Math.max(6, Math.min(innerWidth - 230, r.left)) + 'px'; pop.style.top = (r.bottom + 6) + 'px';
+        const lab = document.createElement('span'); lab.textContent = (PAVE[k] ? PAVE[k].n : k);
+        const inp = document.createElement('input'); inp.type = 'color'; inp.value = OV[k] || DEF[k]; inp.title = 'Click for the full picker';
+        inp.style.cssText = 'width:22px;height:22px;padding:0;border:1px solid #6b7280;border-radius:3px;background:none;cursor:pointer';
+        inp.addEventListener('input', () => set(k, inp.value));
+        const rs = document.createElement('button'); rs.type = 'button'; rs.textContent = 'Reset'; rs.style.cssText = 'background:#374151;color:#fff;border:1px solid #4b5563;border-radius:4px;padding:1px 7px;font-size:11px;cursor:pointer';
+        rs.onclick = () => { set(k, null); inp.value = DEF[k]; };
+        pop.appendChild(lab); pop.appendChild(inp); const d = dropper(v => { inp.value = v; set(k, v); }); if (d) pop.appendChild(d); pop.appendChild(rs);
+        document.body.appendChild(pop);
+    });
+    document.querySelectorAll('#pave-row .swatch').forEach(b => { b.title = (b.title || '') + ' (right-click to change its color)'; });
+    rebuild(); if (Object.keys(OV).length) { try { updateLaneGraphics(); } catch (e) { /* later */ } }
 })();
 </script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bc47701a6c2d48beb7aec1542ee7f5d4"}'></script><!-- End Cloudflare Web Analytics -->
